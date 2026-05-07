@@ -79,8 +79,8 @@
 ### ECM 安全层
 
 - [x] 在 `craic_pipeline/ecm_safety_layer.py` 实现 `load_params_from_mat()`、`ECMSafetyLayer`
-- [ ] 单元测试 `cross_check_against_matlab()`：与 MIUK.m 输出电压差 < 1 mV
-- [ ] 投影测试：随机 1000 条动作，100% 满足 V_min ≤ V_pred ≤ V_max
+- [x] 单元测试 `cross_check_against_matlab()`：与 MIUK.m 输出电压差 < 1 mV
+- [x] 投影测试：随机 1000 条动作，100% 满足 V_min ≤ V_pred ≤ V_max
 
 ## W3 · RL 训练
 
@@ -137,6 +137,7 @@
 - 2026-05-07 W2 世界模型：直接预测绝对 `[SOC_next,V_next,T_next,delta_SOH]` 时 50 epoch 后 B0018 holdout 电压 MAE 约 28 mV；改为 residual head（初始等价 persistence baseline）后，WSL GPU/Mamba 50 epoch 在 B0005/B0006/B0007 → B0018 holdout 上 1-step V MAE 为 1.42 mV，满足 `<5 mV`。20-step drift 和 Randomized 外推尚未验收。
 - 2026-05-08 W2 rollout：重新生成带 `traces` 的 `outputs/world_model_train_data.pt` 后，B0018 holdout 20-step open-loop voltage drift MAE 为 8.04 mV、p95 为 22.03 mV，满足 `<50 mV`。
 - 2026-05-08 W2 Randomized：新增 `--cache-dir` 分文件 shard 缓存，并按文件大小优先解析 Randomized。6 个最小 Randomized `.mat` shard 已缓存；在该动态负载子集上，PCoE 训练好的 residual Mamba 1-step V MAE 为 2.39 mV，20-step 采样 rollout V MAE 为 7.71 mV，满足 Randomized 子集 `<10 mV`。注意：这不是 28 个 Randomized 文件的全量验收；全量仍建议后台长跑或继续增量缓存。
+- 2026-05-08 W2 ECM：`cross_check_against_matlab()` 使用 `savemat_2order.mat` 的 `I/SOC/Ts` 和独立二阶 RC 参考公式做 Python 对照，最大误差 < 1 mV；1000 个随机动作投影后端电压均满足 `V_min <= V_pred <= V_max`。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。

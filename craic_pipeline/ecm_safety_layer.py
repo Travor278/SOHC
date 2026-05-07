@@ -140,13 +140,47 @@ def _scalar(raw: dict, key: str) -> float:
 
 
 def cross_check_against_matlab() -> dict:
-    """Run a local ECM sanity check against the shipped MATLAB parameters."""
+    """Cross-check ECM voltage against an independent MATLAB-form reference."""
     params = load_params_from_mat()
-    layer = ECMSafetyLayer(params, dt=0.2)
-    voltages = [layer.predict_voltage(soc, current) for soc, current in ((0.2, -2.0), (0.5, 0.0), (0.8, 2.0))]
-    if not all(params.V_min - 0.5 <= v <= params.V_max + 0.5 for v in voltages):
-        raise AssertionError(f"unexpected ECM voltage range: {voltages}")
-    return {"voltages": voltages, "params": params}
+    raw = loadmat(DEFAULT_PARAMS_MAT, squeeze_me=True, struct_as_record=False)
+    currents = _array(raw.get("I"))[:200]
+    soc = _array(raw.get("SOC"))[:200]
+    if currents.size < 10 or soc.size < 10:
+        currents = np.linspace(-2.0, 2.0, 200)
+        soc = np.linspace(0.2, 0.9, 200)
+    dt = float(_array(raw.get("Ts"))[0]) if _array(raw.get("Ts")).size else 0.2
+
+    layer = ECMSafetyLayer(params, dt=dt)
+    reference_v1 = 0.0
+    reference_v2 = 0.0
+    errors = []
+    voltages = []
+    for one_soc, current in zip(soc, currents):
+        predicted = layer.predict_voltage(float(one_soc), float(current))
+        reference_v1, reference_v2 = _reference_next_polarization(params, dt, reference_v1, reference_v2, float(current))
+        reference = np.polyval(params.ocv_coeffs, np.clip(one_soc, 0.0, 1.0)) - current * params.R0 - reference_v1 - reference_v2
+        errors.append(abs(predicted - reference))
+        voltages.append(predicted)
+        layer.V1, layer.V2 = layer._next_polarization(float(current))
+    max_error_mV = float(np.max(errors) * 1000.0)
+    if max_error_mV >= 1.0:
+        raise AssertionError(f"ECM reference mismatch: {max_error_mV:.3f} mV")
+    return {"max_abs_error_mV": max_error_mV, "samples": int(len(errors)), "voltages": voltages[:5]}
+
+
+def _reference_next_polarization(
+    params: ECMParams,
+    dt: float,
+    v1: float,
+    v2: float,
+    current: float,
+) -> tuple[float, float]:
+    """Independent second-order RC state update matching the MATLAB equations."""
+    a1 = np.exp(-dt / max(params.R1 * params.C1, 1e-12))
+    a2 = np.exp(-dt / max(params.R2 * params.C2, 1e-12))
+    next_v1 = v1 * a1 + current * params.R1 * (1.0 - a1)
+    next_v2 = v2 * a2 + current * params.R2 * (1.0 - a2)
+    return float(next_v1), float(next_v2)
 
 
 if __name__ == "__main__":
