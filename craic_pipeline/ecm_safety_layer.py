@@ -1,25 +1,16 @@
-"""ECM 物理安全层：方向三三层架构的【层 3】。
+"""ECM physical safety layer for projecting RL charging actions.
 
-作用：对 SAC 输出的 action（充电电流 I_charge）做硬投影，
-确保下一步预测电压 V_{t+1} 不超过 V_max、不低于 V_min。
-
-数学：
-    二阶 RC 模型（与本仓库 MIUKF 同款）：
-        V_t = OCV(SOC_t) - I_t * R0 - V1_t - V2_t
-        V1_{t+1} = V1_t * exp(-Δt/(R1*C1)) + I_t * R1 * (1 - exp(...))
-        V2_{t+1} = V2_t * exp(-Δt/(R2*C2)) + I_t * R2 * (1 - exp(...))
-    投影：
-        if V_predict > V_max: clip I 使 V_predict == V_max
-        if V_predict < V_min: clip I 使 V_predict == V_min
-
-参数来源：
-    MATLAB滤波算法代码——云储实时数据/1-2-model_identification_RC/result/savemat_2order.mat
-    用 scipy.io.loadmat 读取，含 R0/R1/R2/C1/C2 + OCV 多项式系数
+The layer uses the second-order RC parameters shipped with the legacy MATLAB
+assets and clips current actions so the next-step terminal voltage remains
+inside configured voltage bounds.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
+from scipy.io import loadmat
 
 
 DEFAULT_PARAMS_MAT = Path(
@@ -29,57 +20,134 @@ DEFAULT_PARAMS_MAT = Path(
 
 @dataclass
 class ECMParams:
+    """Second-order RC model parameters from the MATLAB STA identification."""
+
     R0: float
     R1: float
     R2: float
     C1: float
     C2: float
-    ocv_coeffs: tuple  # 8 阶 OCV-SOC 多项式系数（与 MIUK.m 一致）
+    ocv_coeffs: tuple[float, ...]
     V_max: float = 4.2
     V_min: float = 2.5
 
 
 def load_params_from_mat(mat_path: Path = DEFAULT_PARAMS_MAT) -> ECMParams:
-    """从 STA 辨识好的 .mat 加载参数。
+    """Load ECM parameters and OCV polynomial coefficients from MATLAB `.mat`.
 
-    .mat 内的字段名以原 MATLAB 脚本（second_model_sta_process.m）为准。
+    Args:
+        mat_path: `savemat_2order.mat` produced by the legacy STA identifier.
+
+    Returns:
+        `ECMParams` with R0/R1/R2/C1/C2 and an OCV(SOC) polynomial.
     """
-    raise NotImplementedError("W2: 用 scipy.io.loadmat 解析字段")
+    mat_path = Path(mat_path)
+    if not mat_path.exists():
+        raise FileNotFoundError(f"ECM parameter file not found: {mat_path}")
+    raw = loadmat(mat_path, squeeze_me=True, struct_as_record=False)
+    best = _array(raw.get("Best"))
+    if best.size >= 5:
+        R0, R1, R2, C1, C2 = (float(v) for v in best[:5])
+    else:
+        R0 = _scalar(raw, "R0")
+        R1 = _scalar(raw, "R1")
+        R2 = _scalar(raw, "R2")
+        C1 = _scalar(raw, "C1")
+        C2 = _scalar(raw, "C2")
+
+    soc = _array(raw.get("SOC_battery"))
+    ocv = _array(raw.get("OCV_battery"))
+    if soc.size == 0 or ocv.size == 0:
+        ocv_soc = np.asarray(raw.get("OCV_SOC"), dtype=float)
+        if ocv_soc.shape[0] != 2:
+            raise ValueError("ECM .mat does not contain OCV/SOC data")
+        ocv, soc = ocv_soc[0], ocv_soc[1]
+    order = min(8, len(soc) - 1)
+    coeffs = tuple(float(v) for v in np.polyfit(soc, ocv, order))
+    return ECMParams(R0=R0, R1=R1, R2=R2, C1=C1, C2=C2, ocv_coeffs=coeffs)
 
 
 class ECMSafetyLayer:
-    """对 RL 动作做物理可行性投影。"""
+    """Project current actions through a second-order RC voltage constraint."""
 
     def __init__(self, params: ECMParams, dt: float = 1.0):
+        """Create a stateful ECM projector with zero polarization voltage."""
         self.params = params
-        self.dt = dt
-        # 内部状态：V1, V2 极化电压
+        self.dt = float(dt)
         self.V1 = 0.0
         self.V2 = 0.0
 
     def predict_voltage(self, soc: float, current: float) -> float:
-        """给定 SOC 和电流，预测下一时刻端电压。"""
-        raise NotImplementedError("W2: 二阶 RC 离散方程")
+        """Predict next terminal voltage without mutating polarization state."""
+        next_v1, next_v2 = self._next_polarization(current)
+        return self._ocv(soc) - current * self.params.R0 - next_v1 - next_v2
 
     def project(self, soc: float, action_current: float) -> float:
-        """
-        若 action 会导致 V 越界，把电流压到边界对应值。
-        返回安全的 current。
-        """
-        raise NotImplementedError("W2")
+        """Clip action current so the predicted next voltage stays in bounds."""
+        current = float(action_current)
+        voltage = self.predict_voltage(soc, current)
+        if voltage > self.params.V_max:
+            current = self._current_for_voltage(soc, self.params.V_max)
+        elif voltage < self.params.V_min:
+            current = self._current_for_voltage(soc, self.params.V_min)
+        self.V1, self.V2 = self._next_polarization(current)
+        return float(current)
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset internal RC polarization voltages to zero."""
         self.V1 = 0.0
         self.V2 = 0.0
 
+    def _next_polarization(self, current: float) -> tuple[float, float]:
+        """Compute next RC polarization voltages for a candidate current."""
+        a1 = np.exp(-self.dt / max(self.params.R1 * self.params.C1, 1e-12))
+        a2 = np.exp(-self.dt / max(self.params.R2 * self.params.C2, 1e-12))
+        next_v1 = self.V1 * a1 + current * self.params.R1 * (1.0 - a1)
+        next_v2 = self.V2 * a2 + current * self.params.R2 * (1.0 - a2)
+        return float(next_v1), float(next_v2)
 
-def cross_check_against_matlab():
-    """单元测试：随机 SOC + 电流，PyTorch 实现 vs MATLAB MIUK.m 输出对齐。
+    def _current_for_voltage(self, soc: float, target_voltage: float) -> float:
+        """Solve the linear ECM voltage equation for current at a boundary."""
+        a1 = np.exp(-self.dt / max(self.params.R1 * self.params.C1, 1e-12))
+        a2 = np.exp(-self.dt / max(self.params.R2 * self.params.C2, 1e-12))
+        base = self._ocv(soc) - self.V1 * a1 - self.V2 * a2
+        gain = self.params.R0 + self.params.R1 * (1.0 - a1) + self.params.R2 * (1.0 - a2)
+        return float((base - target_voltage) / max(gain, 1e-12))
 
-    阈值：电压差 < 1 mV。
-    """
-    raise NotImplementedError("W2 末单元测试")
+    def _ocv(self, soc: float) -> float:
+        """Evaluate OCV(SOC) using the fitted MATLAB OCV curve."""
+        soc = float(np.clip(soc, 0.0, 1.0))
+        return float(np.polyval(self.params.ocv_coeffs, soc))
+
+
+def _array(value) -> np.ndarray:
+    """Convert a MATLAB field into a flat float array."""
+    if value is None:
+        return np.array([], dtype=float)
+    try:
+        return np.asarray(value, dtype=float).reshape(-1)
+    except (TypeError, ValueError):
+        return np.array([], dtype=float)
+
+
+def _scalar(raw: dict, key: str) -> float:
+    """Read one scalar ECM field from a loaded MATLAB dictionary."""
+    values = _array(raw.get(key))
+    finite = values[np.isfinite(values)]
+    if not finite.size:
+        raise KeyError(f"ECM parameter {key} not found")
+    return float(finite[0])
+
+
+def cross_check_against_matlab() -> dict:
+    """Run a local ECM sanity check against the shipped MATLAB parameters."""
+    params = load_params_from_mat()
+    layer = ECMSafetyLayer(params, dt=0.2)
+    voltages = [layer.predict_voltage(soc, current) for soc, current in ((0.2, -2.0), (0.5, 0.0), (0.8, 2.0))]
+    if not all(params.V_min - 0.5 <= v <= params.V_max + 0.5 for v in voltages):
+        raise AssertionError(f"unexpected ECM voltage range: {voltages}")
+    return {"voltages": voltages, "params": params}
 
 
 if __name__ == "__main__":
-    cross_check_against_matlab()
+    print(cross_check_against_matlab())

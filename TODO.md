@@ -67,18 +67,18 @@
 
 ### Mamba 世界模型
 
-- [ ] 在 `craic_pipeline/world_model_mamba.py` 实现 `BatteryWorldModel`、`build_training_dataset()`
+- [x] 在 `craic_pipeline/world_model_mamba.py` 实现 `BatteryWorldModel`、`build_training_dataset()`
 - [ ] 训练循环（MSE on next-step），50 epochs
 - [ ] 验证目标：
   - [ ] 1 步 V 预测 MAE < 5 mV（B0005-B0018 holdout）
   - [ ] 20 步漂移 < 50 mV
   - [ ] **Randomized 子集（动态负载）外推 MAE < 10 mV** ← 关键
-- [ ] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
+- [x] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
 - [ ] 保存 `outputs/world_model.pt`
 
 ### ECM 安全层
 
-- [ ] 在 `craic_pipeline/ecm_safety_layer.py` 实现 `load_params_from_mat()`、`ECMSafetyLayer`
+- [x] 在 `craic_pipeline/ecm_safety_layer.py` 实现 `load_params_from_mat()`、`ECMSafetyLayer`
 - [ ] 单元测试 `cross_check_against_matlab()`：与 MIUK.m 输出电压差 < 1 mV
 - [ ] 投影测试：随机 1000 条动作，100% 满足 V_min ≤ V_pred ≤ V_max
 
@@ -128,6 +128,8 @@
 - 2026-05-07 SOC fine-tune 烟测：用 4 个 ARC 文件、1 epoch、100-step KeiLongW 权重跑通 `soc_finetune.py`，训练不再 NaN；但小样本 PCoE MAE 为 21.18%，仅证明链路可运行，不能作为 `outputs/soc_finetuned.h5` 正式验收模型。
 - 2026-05-07 SOC full fine-tune：修正 NASA discharge 电流符号（负电流为放电），只在带 `Capacity` 的 discharge cycle 内部构造 SOC 窗口，避免跨 cycle 滑窗；全 ARC、100-step、stride=20、5 epoch 已输出 `outputs/soc_finetuned.h5`，PCoE sampled holdout MAE 为 5.51%，尚未达到 `<1.5%`。20 epoch CPU 训练曾超过 20 分钟，已给脚本加入 best checkpoint/early stopping，后续需继续改标签/模型策略。
 - 2026-05-07 SOH baseline：纯统计 Ridge fallback 首次 NASA cell-id holdout RMSE 为 36.36%；加入容量字段构造出的 capacity-ratio 一致性特征并裁剪 SOH 到 `[0,1]` 后，`outputs/soh_baseline.pt` 的 NASA holdout RMSE 为 2.32e-13%，满足 W1 `<2%`。该基线依赖 NASA `Capacity` 字段，适合作 W1 标签一致性/软标签基准，不代表无容量标签部署能力。
+- 2026-05-07 WSL/Mamba：`Ubuntu2404` 已建 `~/.venvs/sohc-craic-py312`，PyTorch 2.11.0+cu128 在 RTX 5070 Laptop GPU (`sm_120`) 上 CUDA tensor 实测通过。`mamba-ssm` 默认全架构编译会长时间停在 nvcc/ptxas；已将源码临时 patch 为只编 `sm_120` 后成功安装 `causal-conv1d==1.6.1` 和 `mamba-ssm==2.3.1`，Mamba CUDA forward 通过。
+- 2026-05-07 WSL apt：`GET 61` 并非死锁，是安装完整 `cuda-toolkit-12-8` 时下载大包；中断后用 `sudo dpkg --configure -a` 修复，最终 `nvcc` 12.8.93 可用。后续优先装最小 `cuda-nvcc-12-8`/headers，避免完整 toolkit 下载过久。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
