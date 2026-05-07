@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -30,6 +31,7 @@ class WorldModelConfig:
     n_layers: int = 4
     seq_len: int = 64
     use_mamba: bool = True
+    residual_head: bool = True
 
 
 class BatteryWorldModel(nn.Module):
@@ -70,6 +72,7 @@ class BatteryWorldModel(nn.Module):
             nn.SiLU(),
             nn.Linear(cfg.hidden_dim, 4),
         )
+        self._init_residual_head()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Predict `[SOC_next, V_next, T_next, delta_SOH]` from `(B,L,6)`."""
@@ -79,7 +82,19 @@ class BatteryWorldModel(nn.Module):
                 h = h + layer(norm(h))
         else:
             h, _ = self.layers(h)
-        return self.head(h[:, -1])
+        raw = self.head(h[:, -1])
+        if not self.cfg.residual_head:
+            return raw
+        last = x[:, -1].float()
+        return torch.stack(
+            [
+                last[:, 0] + raw[:, 0],
+                last[:, 2] + raw[:, 1],
+                last[:, 4] + raw[:, 2],
+                raw[:, 3],
+            ],
+            dim=-1,
+        )
 
     @torch.no_grad()
     def step(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
@@ -97,6 +112,13 @@ class BatteryWorldModel(nn.Module):
         next_state[:, 3] = action.reshape(-1)
         next_state[:, 4] = pred[:, 2]
         return next_state.squeeze(0)
+
+    def _init_residual_head(self) -> None:
+        """Initialize residual predictions close to a persistence baseline."""
+        final = self.head[-1]
+        if isinstance(final, nn.Linear) and self.cfg.residual_head:
+            nn.init.zeros_(final.weight)
+            nn.init.zeros_(final.bias)
 
 
 def build_training_dataset(
@@ -123,26 +145,132 @@ def build_training_dataset(
     Returns:
         `TensorDataset(X, y)` with `X=(N,L,6)` and `y=(N,4)`.
     """
-    del soc_csv, soh_ckpt
-    arrays: list[tuple[np.ndarray, np.ndarray]] = []
-    for loader, root in ((load_pcoe_basic, Path(pcoe_dir)), (load_randomized_usage, Path(randomized_dir))):
+    bundle = build_world_tensors(
+        pcoe_dir,
+        randomized_dir,
+        soc_weights=soc_csv,
+        soh_ckpt=soh_ckpt,
+        seq_len=seq_len,
+        stride=stride,
+        max_windows=max_windows,
+    )
+    return tensors_to_dataset(bundle)
+
+
+def build_world_tensors(
+    pcoe_dir: Path,
+    randomized_dir: Path,
+    *,
+    soc_weights: Path | None = None,
+    soh_ckpt: Path | None = None,
+    seq_len: int = 64,
+    stride: int = 8,
+    max_windows: int = 100_000,
+    use_soc_model: bool = True,
+    limit_pcoe_files: int | None = None,
+    limit_randomized_files: int | None = None,
+) -> dict:
+    """Build W2 tensor package with SOC/SOH soft labels and source metadata."""
+    del soh_ckpt
+    soc_model = None
+    soc_window = None
+    soc_source = "strict_coulomb_fallback"
+    if use_soc_model and soc_weights and Path(soc_weights).exists():
+        try:
+            from craic_pipeline.soc_inference import infer_model_window, load_keilongw_model
+
+            soc_model = load_keilongw_model(Path(soc_weights))
+            soc_window = infer_model_window(soc_model) or 100
+            soc_source = f"keras:{Path(soc_weights).as_posix()}"
+        except Exception as exc:
+            soc_source = f"strict_coulomb_fallback_after_soc_error:{exc!r}"
+
+    pieces: list[tuple[np.ndarray, np.ndarray, list[str], list[str]]] = []
+    for subset, loader, root in (
+        ("pcoe", load_pcoe_basic, Path(pcoe_dir)),
+        ("randomized", load_randomized_usage, Path(randomized_dir)),
+    ):
         if not root.exists():
             continue
-        V, I, T, _, cycle_id, _, capacity = loader(root)
-        if V.size:
-            arrays.extend(_series_to_windows(V, I, T, cycle_id, capacity, seq_len=seq_len, stride=stride))
-    if not arrays:
+        files = _mat_files(root)
+        limit = limit_pcoe_files if subset == "pcoe" else limit_randomized_files
+        if limit is not None:
+            files = files[:limit]
+        for file_path in files:
+            V, I, T, t, cycle_id, ambient, capacity = loader(file_path)
+            if not V.size:
+                continue
+            df = _frame_from_arrays(V, I, T, t, cycle_id, ambient, capacity)
+            soc = _soc_soft_labels(df, model=soc_model, window=soc_window)
+            soh = _soh_soft_labels(capacity)
+            windows = _series_to_windows(
+                V,
+                I,
+                T,
+                cycle_id,
+                capacity,
+                soc=soc,
+                soh=soh,
+                seq_len=seq_len,
+                stride=stride,
+            )
+            for X_part, y_part in windows:
+                pieces.append(
+                    (
+                        X_part,
+                        y_part,
+                        [subset] * len(y_part),
+                        [file_path.stem] * len(y_part),
+                    )
+                )
+    if not pieces:
         raise FileNotFoundError("no NASA windows found for world-model training")
-    X = np.concatenate([item[0] for item in arrays], axis=0)
-    y = np.concatenate([item[1] for item in arrays], axis=0)
-    X, y = _cap_samples(X, y, max_windows)
-    return TensorDataset(torch.from_numpy(X).float(), torch.from_numpy(y).float())
+
+    X = np.concatenate([item[0] for item in pieces], axis=0)
+    y = np.concatenate([item[1] for item in pieces], axis=0)
+    subsets = np.asarray([value for item in pieces for value in item[2]], dtype=object)
+    cells = np.asarray([value for item in pieces for value in item[3]], dtype=object)
+    X, y, subsets, cells = _cap_samples_with_meta(X, y, subsets, cells, max_windows)
+    return {
+        "X": X.astype(np.float32),
+        "y": y.astype(np.float32),
+        "subset": subsets,
+        "cell": cells,
+        "schema": ["SOC", "SOH", "V", "I", "T", "action_current"],
+        "target_schema": ["SOC_next", "V_next", "T_next", "delta_SOH"],
+        "meta": {
+            "seq_len": seq_len,
+            "stride": stride,
+            "max_windows": max_windows,
+            "soc_source": soc_source,
+            "soh_source": "capacity_ratio_per_file",
+            "samples": int(len(y)),
+            "subsets": {name: int(np.sum(subsets == name)) for name in sorted(set(subsets.tolist()))},
+        },
+    }
+
+
+def tensors_to_dataset(bundle: dict) -> TensorDataset:
+    """Convert a saved W2 tensor bundle to `TensorDataset(X, y)`."""
+    return TensorDataset(torch.from_numpy(np.asarray(bundle["X"])).float(), torch.from_numpy(np.asarray(bundle["y"])).float())
+
+
+def save_world_tensors(bundle: dict, out: Path) -> None:
+    """Persist W2 train tensors to a `.pt` package."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(bundle, out)
+
+
+def load_world_tensors(path: Path) -> dict:
+    """Load W2 train tensors from a `.pt` package."""
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def train_world_model(
     dataset: TensorDataset,
     cfg: WorldModelConfig,
     *,
+    val_dataset: TensorDataset | None = None,
     epochs: int = 5,
     batch_size: int = 256,
     lr: float = 1e-3,
@@ -154,6 +282,7 @@ def train_world_model(
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
     history: list[float] = []
+    val_history: list[dict] = []
     for _ in range(epochs):
         losses = []
         for X, y in loader:
@@ -165,9 +294,79 @@ def train_world_model(
             opt.step()
             losses.append(float(loss.detach()))
         history.append(float(np.mean(losses)) if losses else float("nan"))
+        if val_dataset is not None:
+            val_history.append(evaluate_world_model(model, val_dataset, batch_size=batch_size, device=device))
     model = model.cpu()
-    metrics = {"loss": history, "backend": model.backend, "samples": len(dataset), "device": str(device)}
+    metrics = {
+        "loss": history,
+        "val": val_history,
+        "backend": model.backend,
+        "samples": len(dataset),
+        "val_samples": 0 if val_dataset is None else len(val_dataset),
+        "device": str(device),
+    }
     return model, metrics
+
+
+@torch.no_grad()
+def evaluate_world_model(
+    model: BatteryWorldModel,
+    dataset: TensorDataset,
+    *,
+    batch_size: int = 1024,
+    device: torch.device | str | None = None,
+) -> dict:
+    """Evaluate one-step SOC/V/T/SOH metrics on a world-model dataset."""
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    was_training = model.training
+    model = model.to(device)
+    model.eval()
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    preds = []
+    targets = []
+    for X, y in loader:
+        preds.append(model(X.to(device)).detach().cpu())
+        targets.append(y.detach().cpu())
+    if was_training:
+        model.train()
+    pred = torch.cat(preds).numpy()
+    target = torch.cat(targets).numpy()
+    err = pred - target
+    return {
+        "soc_mae_percent": float(np.mean(np.abs(err[:, 0])) * 100.0),
+        "voltage_mae_mV": float(np.mean(np.abs(err[:, 1])) * 1000.0),
+        "temperature_mae_C": float(np.mean(np.abs(err[:, 2]))),
+        "delta_soh_mae_percent": float(np.mean(np.abs(err[:, 3])) * 100.0),
+    }
+
+
+def split_dataset(dataset: TensorDataset, val_ratio: float = 0.2) -> tuple[TensorDataset, TensorDataset]:
+    """Deterministically split a tensor dataset into train/validation parts."""
+    if not 0.0 < val_ratio < 1.0:
+        raise ValueError("val_ratio must be in (0, 1)")
+    X, y = dataset.tensors
+    n = len(dataset)
+    n_val = max(1, int(round(n * val_ratio)))
+    rng = np.random.default_rng(2026)
+    idx = rng.permutation(n)
+    val_idx = np.sort(idx[:n_val])
+    train_idx = np.sort(idx[n_val:])
+    return TensorDataset(X[train_idx], y[train_idx]), TensorDataset(X[val_idx], y[val_idx])
+
+
+def split_bundle_by_cell(bundle: dict, val_cells: list[str]) -> tuple[TensorDataset, TensorDataset]:
+    """Split a W2 tensor bundle by NASA cell id for holdout validation."""
+    X = torch.from_numpy(np.asarray(bundle["X"])).float()
+    y = torch.from_numpy(np.asarray(bundle["y"])).float()
+    cells = np.asarray(bundle.get("cell"))
+    if cells.size != len(y):
+        raise ValueError("bundle does not contain cell metadata aligned with samples")
+    val_set = {cell.upper() for cell in val_cells}
+    val_mask = np.asarray([str(cell).upper() in val_set for cell in cells], dtype=bool)
+    train_mask = ~val_mask
+    if not val_mask.any() or not train_mask.any():
+        raise ValueError(f"val_cells={val_cells} do not create a non-empty train/val split")
+    return TensorDataset(X[train_mask], y[train_mask]), TensorDataset(X[val_mask], y[val_mask])
 
 
 def _series_to_windows(
@@ -177,6 +376,8 @@ def _series_to_windows(
     cycle_id: np.ndarray,
     capacity: np.ndarray,
     *,
+    soc: np.ndarray | None = None,
+    soh: np.ndarray | None = None,
     seq_len: int,
     stride: int,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -186,9 +387,9 @@ def _series_to_windows(
         idx = np.where(cycle_id == cid)[0]
         if idx.size <= seq_len:
             continue
-        soc = _approx_soc(I[idx], capacity[idx])
-        soh = _approx_soh(capacity[idx])
-        features = np.column_stack([soc, soh, V[idx], I[idx], T[idx], I[idx]])
+        soc_cycle = soc[idx] if soc is not None else _approx_soc(I[idx], capacity[idx])
+        soh_cycle = soh[idx] if soh is not None else _approx_soh(capacity[idx])
+        features = np.column_stack([soc_cycle, soh_cycle, V[idx], I[idx], T[idx], I[idx]])
         finite = np.isfinite(features).all(axis=1)
         if finite.sum() <= seq_len:
             continue
@@ -213,6 +414,76 @@ def _window_one_cycle(features: np.ndarray, *, seq_len: int, stride: int) -> tup
     if not X_parts:
         return np.empty((0, seq_len, 6), dtype=np.float32), np.empty((0, 4), dtype=np.float32)
     return np.asarray(X_parts, dtype=np.float32), np.asarray(y_parts, dtype=np.float32)
+
+
+def _mat_files(path: Path) -> list[Path]:
+    """Return sorted NASA `.mat` files from a file or directory path."""
+    if path.is_file():
+        return [path]
+    return sorted(path.rglob("*.mat"))
+
+
+def _frame_from_arrays(
+    V: np.ndarray,
+    I: np.ndarray,
+    T: np.ndarray,
+    t: np.ndarray,
+    cycle_id: np.ndarray,
+    ambient: np.ndarray,
+    capacity: np.ndarray,
+) -> pd.DataFrame:
+    """Create a DataFrame compatible with the W1 SOC preprocessing helpers."""
+    return pd.DataFrame(
+        {
+            "t": t,
+            "voltage": V,
+            "current": I,
+            "temperature": T,
+            "cycle_id": cycle_id,
+            "ambient_T": ambient,
+            "capacity": capacity,
+        }
+    )
+
+
+def _soc_soft_labels(df: pd.DataFrame, *, model=None, window: int | None = None) -> np.ndarray:
+    """Infer SOC with W1 Keras weights, falling back to strict NASA labels."""
+    from craic_pipeline.soc_finetune import _estimate_soc_labels
+
+    labels = np.full(len(df), np.nan, dtype=float)
+    if model is not None:
+        from craic_pipeline.soc_inference import predict_soc, preprocess_sequence
+
+        for _, group in df.groupby("cycle_id", sort=False):
+            if len(group) < (window or 100):
+                continue
+            try:
+                X, rows = preprocess_sequence(group, window or 100, stride=1)
+            except ValueError:
+                continue
+            labels[rows.index.to_numpy(dtype=int)] = predict_soc(model, X)
+    fallback = _estimate_soc_labels(df, mode="strict")
+    missing = ~np.isfinite(labels)
+    labels[missing] = fallback[missing]
+    if np.isfinite(labels).any():
+        labels = _fill_nan_1d(labels)
+    return labels
+
+
+def _soh_soft_labels(capacity: np.ndarray) -> np.ndarray:
+    """Create per-sample SOH labels from NASA capacity ratio."""
+    return _approx_soh(capacity)
+
+
+def _fill_nan_1d(values: np.ndarray) -> np.ndarray:
+    """Interpolate finite labels and clamp any all-NaN case to one."""
+    values = np.asarray(values, dtype=float).copy()
+    finite = np.isfinite(values)
+    if not finite.any():
+        return np.ones_like(values, dtype=float)
+    x = np.arange(len(values))
+    values[~finite] = np.interp(x[~finite], x[finite], values[finite])
+    return np.clip(values, 0.0, 1.0)
 
 
 def _approx_soc(current: np.ndarray, capacity: np.ndarray) -> np.ndarray:
@@ -247,34 +518,82 @@ def _cap_samples(X: np.ndarray, y: np.ndarray, max_windows: int) -> tuple[np.nda
     return X[idx], y[idx]
 
 
+def _cap_samples_with_meta(
+    X: np.ndarray,
+    y: np.ndarray,
+    subset: np.ndarray,
+    cell: np.ndarray,
+    max_windows: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Subsample world-model windows while preserving metadata alignment."""
+    if len(y) <= max_windows:
+        return X, y, subset, cell
+    rng = np.random.default_rng(2026)
+    idx = np.sort(rng.choice(len(y), size=max_windows, replace=False))
+    return X[idx], y[idx], subset[idx], cell[idx]
+
+
 def main() -> None:
     """Train the W2 Mamba/GRU world model CLI."""
     parser = argparse.ArgumentParser(description="Train Mamba/GRU world model on NASA PCoE")
     parser.add_argument("--pcoe-dir", type=Path, default=Path("data/nasa_pcoe/B000x"))
     parser.add_argument("--randomized-dir", type=Path, default=Path("data/nasa_pcoe/Randomized"))
-    parser.add_argument("--soc-csv", type=Path, default=Path("outputs/soc_pred_nasa.csv"))
+    parser.add_argument("--soc-weights", type=Path, default=Path("outputs/soc_finetuned.h5"))
+    parser.add_argument("--no-soc-model", action="store_true", help="Use strict Coulomb SOC labels only")
     parser.add_argument("--soh-ckpt", type=Path, default=Path("outputs/soh_baseline.pt"))
+    parser.add_argument("--dataset", type=Path, default=None, help="Load a prebuilt W2 tensor package")
+    parser.add_argument("--dataset-out", type=Path, default=Path("outputs/world_model_train_data.pt"))
     parser.add_argument("--out", type=Path, default=Path("outputs/world_model.pt"))
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--seq-len", type=int, default=64)
     parser.add_argument("--stride", type=int, default=8)
     parser.add_argument("--max-windows", type=int, default=100_000)
+    parser.add_argument("--limit-pcoe-files", type=int, default=None)
+    parser.add_argument("--limit-randomized-files", type=int, default=None)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--val-cells", nargs="*", default=None)
     parser.add_argument("--gru-fallback", action="store_true", help="Force GRU when mamba-ssm is unavailable")
+    parser.add_argument("--build-only", action="store_true", help="Only build and save W2 train tensors")
     args = parser.parse_args()
 
     cfg = WorldModelConfig(seq_len=args.seq_len, use_mamba=not args.gru_fallback)
-    dataset = build_training_dataset(
-        args.pcoe_dir,
-        args.randomized_dir,
-        args.soc_csv,
-        args.soh_ckpt,
-        seq_len=args.seq_len,
-        stride=args.stride,
-        max_windows=args.max_windows,
+    if args.dataset is not None and args.dataset.exists():
+        bundle = load_world_tensors(args.dataset)
+    else:
+        bundle = build_world_tensors(
+            args.pcoe_dir,
+            args.randomized_dir,
+            soc_weights=args.soc_weights,
+            soh_ckpt=args.soh_ckpt,
+            seq_len=args.seq_len,
+            stride=args.stride,
+            max_windows=args.max_windows,
+            use_soc_model=not args.no_soc_model,
+            limit_pcoe_files=args.limit_pcoe_files,
+            limit_randomized_files=args.limit_randomized_files,
+        )
+        save_world_tensors(bundle, args.dataset_out)
+    if args.build_only:
+        print(json.dumps(bundle["meta"], indent=2))
+        return
+
+    dataset = tensors_to_dataset(bundle)
+    if args.val_cells:
+        train_ds, val_ds = split_bundle_by_cell(bundle, args.val_cells)
+    else:
+        train_ds, val_ds = split_dataset(dataset, val_ratio=args.val_ratio)
+    model, metrics = train_world_model(
+        train_ds,
+        cfg,
+        val_dataset=val_ds,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
     )
-    model, metrics = train_world_model(dataset, cfg, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr)
+    metrics["dataset"] = bundle.get("meta", {})
+    metrics["final_val"] = evaluate_world_model(model, val_ds, batch_size=args.batch_size)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": model.state_dict(), "cfg": asdict(cfg), "metrics": metrics}, args.out)
     args.out.with_suffix(".metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")

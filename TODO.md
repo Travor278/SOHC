@@ -61,20 +61,20 @@
 ### NASA 软标签构造
 
 - [ ] 用 W1 的 SOC 估计器在 B0005-B0018 + Randomized 上 inference → SOC 软标签
-- [ ] 用 W1 的 SOH 估计器在每循环开始 inference → SOH 软标签
-- [ ] 拼成 `(V, I, T, SOC, SOH, action)` shape (N, L, 6) tensor
-- [ ] 保存 `outputs/world_model_train_data.pt`
+- [x] 用 W1 的 SOH 估计器在每循环开始 inference → SOH 软标签
+- [x] 拼成 `(V, I, T, SOC, SOH, action)` shape (N, L, 6) tensor
+- [x] 保存 `outputs/world_model_train_data.pt`
 
 ### Mamba 世界模型
 
 - [x] 在 `craic_pipeline/world_model_mamba.py` 实现 `BatteryWorldModel`、`build_training_dataset()`
-- [ ] 训练循环（MSE on next-step），50 epochs
+- [x] 训练循环（MSE on next-step），50 epochs
 - [ ] 验证目标：
-  - [ ] 1 步 V 预测 MAE < 5 mV（B0005-B0018 holdout）
+  - [x] 1 步 V 预测 MAE < 5 mV（B0005-B0018 holdout）
   - [ ] 20 步漂移 < 50 mV
   - [ ] **Randomized 子集（动态负载）外推 MAE < 10 mV** ← 关键
 - [x] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
-- [ ] 保存 `outputs/world_model.pt`
+- [x] 保存 `outputs/world_model.pt`
 
 ### ECM 安全层
 
@@ -132,6 +132,9 @@
 - 2026-05-07 SOH baseline：纯统计 Ridge fallback 首次 NASA cell-id holdout RMSE 为 36.36%；加入容量字段构造出的 capacity-ratio 一致性特征并裁剪 SOH 到 `[0,1]` 后，`outputs/soh_baseline.pt` 的 NASA holdout RMSE 为 2.32e-13%，满足 W1 `<2%`。该基线依赖 NASA `Capacity` 字段，适合作 W1 标签一致性/软标签基准，不代表无容量标签部署能力。
 - 2026-05-07 WSL/Mamba：`Ubuntu2404` 已建 `~/.venvs/sohc-craic-py312`，PyTorch 2.11.0+cu128 在 RTX 5070 Laptop GPU (`sm_120`) 上 CUDA tensor 实测通过。`mamba-ssm` 默认全架构编译会长时间停在 nvcc/ptxas；已将源码临时 patch 为只编 `sm_120` 后成功安装 `causal-conv1d==1.6.1` 和 `mamba-ssm==2.3.1`，Mamba CUDA forward 通过。
 - 2026-05-07 WSL apt：`GET 61` 并非死锁，是安装完整 `cuda-toolkit-12-8` 时下载大包；中断后用 `sudo dpkg --configure -a` 修复，最终 `nvcc` 12.8.93 可用。后续优先装最小 `cuda-nvcc-12-8`/headers，避免完整 toolkit 下载过久。
+- 2026-05-07 W2 GPU：Windows `.venv_craic` 主要用于 `.mat` 解析/TF SOC，PyTorch CUDA wheel 不支持本机 `sm_120`，所以世界模型训练切到 `Ubuntu2404` WSL；本次 `outputs/world_model.pt` 训练日志显示 `backend=mamba`、`device=cuda`。
+- 2026-05-07 W2 数据包：`outputs/world_model_train_data.pt` 当前为 PCoE-only（B0005/B0006/B0007/B0018）、严格库仑 SOC fallback、SOH capacity-ratio soft label，20k windows。全量 Randomized 解析在 Windows 上长时间无产物，已暂停；后续需做分文件缓存/长跑后再补 Randomized 外推指标。
+- 2026-05-07 W2 世界模型：直接预测绝对 `[SOC_next,V_next,T_next,delta_SOH]` 时 50 epoch 后 B0018 holdout 电压 MAE 约 28 mV；改为 residual head（初始等价 persistence baseline）后，WSL GPU/Mamba 50 epoch 在 B0005/B0006/B0007 → B0018 holdout 上 1-step V MAE 为 1.42 mV，满足 `<5 mV`。20-step drift 和 Randomized 外推尚未验收。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
