@@ -13,13 +13,14 @@ def make_env(
     max_steps: int = 600,
     soc_target: float = 0.8,
     i_max_amps: float = 5.0,
+    reward_weights: dict[str, float] | None = None,
     seed: int | None = None,
 ):
     """Create a monitored W3 SAC environment from W2 and ECM artifacts."""
     from stable_baselines3.common.monitor import Monitor
 
     from craic_pipeline.ecm_safety_layer import ECMSafetyLayer, load_params_from_mat
-    from craic_pipeline.rl_env import BatteryChargingEnv, EnvConfig
+    from craic_pipeline.rl_env import BatteryChargingEnv, EnvConfig, RewardWeights
     from craic_pipeline.world_model_mamba import load_world_model_checkpoint
 
     resolved_device = _resolve_device(device)
@@ -32,6 +33,7 @@ def make_env(
             "or retrain W2 with --gru-fallback."
         ) from exc
     params = load_params_from_mat(Path(ecm_params_path))
+    reward = RewardWeights(**reward_weights) if reward_weights else None
     cfg = EnvConfig(
         max_steps=max_steps,
         soc_target=soc_target,
@@ -40,6 +42,7 @@ def make_env(
         I_max_amps=i_max_amps,
         seq_len=int(getattr(world_model.cfg, "seq_len", 64)),
         device=resolved_device,
+        reward=reward,
     )
     env = BatteryChargingEnv(world_model, ECMSafetyLayer(params, dt=cfg.dt), cfg)
     env.metadata["world_model_metrics"] = metrics
@@ -83,6 +86,10 @@ def main():
     parser.add_argument("--max-steps", type=int, default=600)
     parser.add_argument("--soc-target", type=float, default=0.8)
     parser.add_argument("--i-max-amps", type=float, default=5.0)
+    parser.add_argument("--reward-speed", type=float, default=12.0)
+    parser.add_argument("--reward-voltage", type=float, default=50.0)
+    parser.add_argument("--reward-temperature", type=float, default=0.2)
+    parser.add_argument("--reward-aging", type=float, default=80.0)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--buffer-size", type=int, default=100_000)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -103,6 +110,12 @@ def main():
         max_steps=args.max_steps,
         soc_target=args.soc_target,
         i_max_amps=args.i_max_amps,
+        reward_weights={
+            "speed": args.reward_speed,
+            "voltage": args.reward_voltage,
+            "temperature": args.reward_temperature,
+            "aging": args.reward_aging,
+        },
         seed=args.seed,
     )
     policy_device = _resolve_device(args.policy_device)
