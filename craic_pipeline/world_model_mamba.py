@@ -8,8 +8,10 @@
 输出（next-step prediction）：
     [SOC_{t+1}, V_{t+1}, T_{t+1}, ΔSOH_step]  shape (B, 4)
 
-训练数据：
-    NASA PCoE B0005/06/07/18 连续放电时序
+训练数据 (v0.2 多子集组合)：
+    主集：NASA PCoE B0005/06/07/18 连续 CC-CV 充电 + 2A 恒流放电时序
+    增强：NASA Randomized Battery Usage 1-7（动态负载，0.5-4A 随机游走）
+          → 让世界模型见过非 CC-CV 的多样动作，避免 RL 探索分布外
     SOC_t、SOH_t 由 craic_pipeline.soc_inference / soh_train 推断填入
 
 退化方案（mamba-ssm 装不上时）：
@@ -53,22 +55,26 @@ class BatteryWorldModel:
         raise NotImplementedError
 
 
-def build_training_dataset(nasa_dir: Path, soc_csv: Path, soh_ckpt: Path):
-    """构造 NASA + 软标签训练集。
+def build_training_dataset(pcoe_dir: Path, randomized_dir: Path,
+                            soc_csv: Path, soh_ckpt: Path):
+    """构造 NASA + 软标签训练集（v0.2 双子集）。
 
     流程：
-        1. 读 NASA .mat → V, I, T 时序
-        2. 用 SOC 估计器推断 SOC_t（CSV 已有）
-        3. 用 SOH 估计器在每个循环开始时推断 SOH_t
-        4. ΔSOH_step 用前后两个循环 SOH 差分插值
-        5. action_t 取 NASA 原始电流（已知）
+        1. 读 B0005-B0018 .mat → V, I, T 时序（CC-CV 协议主集）
+        2. 读 Randomized RW1-RW7 .mat → 筛选稳定段（电流变化 < 1A），增强动作多样性
+        3. 用 SOC 估计器推断 SOC_t（CSV 已有）
+        4. 用 SOH 估计器在每个循环开始时推断 SOH_t
+        5. ΔSOH_step 用前后两个循环 SOH 差分插值
+        6. action_t 取原始电流（已知）
+        7. 拼成 (V, I, T, SOC, SOH, action) shape (N, L, 6)
     """
-    raise NotImplementedError("W2: 整合三个数据源拼成训练 tensor")
+    raise NotImplementedError("W2: 整合 PCoE + Randomized 拼成训练 tensor")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Train Mamba world model on NASA PCoE")
-    parser.add_argument("--nasa-dir", type=Path, default=Path("data/nasa_pcoe"))
+    parser.add_argument("--pcoe-dir", type=Path, default=Path("data/nasa_pcoe/B000x"))
+    parser.add_argument("--randomized-dir", type=Path, default=Path("data/nasa_pcoe/Randomized"))
     parser.add_argument("--soc-csv", type=Path, default=Path("outputs/soc_pred_nasa.csv"))
     parser.add_argument("--soh-ckpt", type=Path, default=Path("outputs/soh_baseline.pt"))
     parser.add_argument("--out", type=Path, default=Path("outputs/world_model.pt"))

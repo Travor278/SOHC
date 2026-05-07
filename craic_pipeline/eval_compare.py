@@ -1,14 +1,17 @@
-"""W4 评估：本方案 vs CC-CV / MFCC / MIUKF。
+"""W4-W5 评估：本方案 vs CC-CV / MFCC / MIUKF + Zenodo 泛化展示 (v0.2)。
 
-输出：
+输出（W4 定量）：
     - 充电曲线对比图（I-t / V-t / SOC-t / T-t）
     - 指标表 (CSV)：充至 80% SOC 耗时 / ΔSOH 单循环 / 过压报警次数 / 平均 T
-    - 跨数据集迁移误差曲线（W2 中产出的 SOC/SOH 估计误差）
+
+输出（W5 泛化）：
+    - L3 定量：Zenodo 6985321 (WLTP) zero-shot 误差曲线
+    - L4 定性：Zenodo 18471156 真实电站监测数据上 SOC/SOH 输出曲线（PPT 末尾 1 张图）
 
 基线：
     cc_cv  : 工业标准（V<4.2 时恒流，达 4.2 后恒压）
     mfcc   : 多阶段恒流（论文常用 baseline）
-    miukf  : 复用本仓库 MATLAB MIUKF 输出（仅 SOC 维度对比，老化无对比）
+    miukf  : 复用本仓库 MATLAB MIUKF 输出（仅 SOC 维度对比）
     socnet : 本仓库 神经网络/SOCtarget LSTM 输出（仅 SOC 维度对比）
     ours   : SAC 策略
 """

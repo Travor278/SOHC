@@ -26,13 +26,13 @@ git clone https://github.com/microsoft/BatteryML.git external/BatteryML
 ```
 
 - Stars: 740+
-- 用途：SOH 估计的多算法 benchmark + HUST 数据 loader
+- 用途：SOH 估计的多算法 benchmark + Trainer 框架
 - 关键文件：
-  - `batteryml/data/preprocess/preprocess_HUST.py` — HUST 数据加载
+  - `batteryml/data/battery_data.py` — `BatteryData` 数据类（v0.2 用我们自己的 NASA loader 转成此类型）
   - `examples/soh_example.ipynb` — SOH 训练范例
-  - `configs/` — 多种模型配置
+  - `configs/` — 多种模型配置参考
 
-我们的代码 `craic_pipeline/soh_train.py` 调用它的 HUST loader + Trainer。
+v0.2 用法：复用其 `BatteryData` 类型 + Trainer，但 loader 我们自写 NASA 适配（`craic_pipeline/nasa_loader.py`），不复用其 HUST/CALCE 等内置 loader。
 
 ## 可选
 

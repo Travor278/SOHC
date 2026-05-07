@@ -1,49 +1,71 @@
-# TODO — 5 周执行清单
+# TODO — 5 周执行清单 (v0.2)
 
-> 详细方案见 [PLAN.md](PLAN.md)。本文件是滚动的可勾选清单，跑到哪改到哪。
+> v0.2 数据策略：纯 NASA Plus 主线 + Zenodo 18471156 答辩末尾定性展示。
+> 详细方案见 [PLAN.md](PLAN.md)。
 
 ## W0 · 环境准备（推到远端后在另一台机器上做）
 
-- [ ] 在目标机器上 `git clone` 本仓库
+- [ ] 在目标机器上 `git clone https://github.com/Travor278/SOHC.git`
 - [ ] 跑 `scripts/setup_env.ps1`（Windows）或 `scripts/setup_env.sh`（Linux/macOS）创建 venv 并安装 `requirements.txt`
 - [ ] `git clone https://github.com/KeiLongW/battery-state-estimation.git external/KeiLongW`
 - [ ] `git clone https://github.com/microsoft/BatteryML.git external/BatteryML`
-- [ ] 按 `data/README.md` 指引下载 LG 18650HG2、NASA PCoE、Zenodo 6985321 三个数据集
-- [ ] 验证 `data/HUST data/` 已存在（本仓库携带）
+- [ ] 按 `data/README.md` 指引下载 NASA 三个子集（B0005-B0018、ARC-FY08Q4、Randomized）和 Zenodo 6985321
+- [ ] （可选）下载 Zenodo 18471156 BatteryData.zip 解压（仅 W5 用）
 - [ ] 验证 `MATLAB滤波算法代码——云储实时数据/1-2-model_identification_RC/result/savemat_2order.mat` 已存在
 
-## W1 · SOC + SOH 估计器
+## W1 · SOC + SOH 估计器（NASA 同源训练）
 
-### SOC（KeiLongW）
-- [ ] 跑 `external/KeiLongW/experiments/lg/lstm_soc_lg_*.ipynb` 拿到预训练权重 `.h5`
+### NASA 数据准备
+- [ ] 下载 NASA PCoE B0005/06/07/18 `.mat` → `data/nasa_pcoe/B000x/`
+- [ ] 下载 NASA BatteryAgingARC-FY08Q4 (B0025-B0056) `.mat` → `data/nasa_pcoe/ARC-FY08Q4/`
+- [ ] 写 `craic_pipeline/nasa_loader.py`：
+  - [ ] `load_pcoe_basic(path)` — 解析 B0005-B0018 schema
+  - [ ] `load_arc_fy08q4(path)` — 解析 ARC schema（多温度多倍率）
+  - [ ] 通用接口：返回 (V, I, T, t, cycle_id, ambient_temp, capacity)
+
+### SOC（KeiLongW warm-start + NASA fine-tune）
+- [ ] 跑 `external/KeiLongW/experiments/lg/lstm_soc_lg_*.ipynb` 或 release 拿到 `.h5` 预训练权重
 - [ ] 在 `craic_pipeline/soc_inference.py` 实现 `load_keilongw_model()`、`preprocess_sequence()`、`predict_soc()`
-- [ ] 在 LG 18650HG2 测试集跑通，对齐论文 MAE 0.22%（允许偏差 → MAE < 1%）
-- [ ] 输出 `outputs/soc_pred_lg.csv`
+- [ ] 在 `craic_pipeline/soc_finetune.py`（新增）实现 fine-tune：
+  - [ ] 加载 KeiLongW 权重
+  - [ ] 用 ARC-FY08Q4 多温度多倍率数据 fine-tune（冻结前两层，调最后 LSTM + Dense）
+  - [ ] NASA holdout 验证 MAE < 1.5%
+- [ ] 输出 `outputs/soc_finetuned.h5`
 
-### SOH（BatteryML）
+### SOH（BatteryML 适配 NASA loader）
 - [ ] 跑 `external/BatteryML/examples/soh_example.ipynb` 在内置数据上跑通
-- [ ] 切到 HUST loader（`preprocess_HUST.py`），跑 `craic_pipeline/soh_train.py --config configs/hust_soh_baseline.yaml`
-- [ ] 调通 baseline（Variance / CNN / MLP），HUST holdout RMSE < 2% SOH
+- [ ] 写 `craic_pipeline/soh_train.py`：
+  - [ ] 用 NASA loader 输出适配 BatteryML 的 `BatteryData` 类
+  - [ ] 容量字段 `Capacity` → SOH = capacity / fresh_capacity
+  - [ ] 训 baseline（Variance / 浅层 CNN，BatteryML 内置）
+- [ ] NASA holdout RMSE < 2% SOH
 - [ ] 保存 `outputs/soh_baseline.pt` + 训练日志
 
-### 自有基线对接（L3 验证）
-- [ ] 把本仓库 MATLAB MIUKF 输出的 SOC 导出 CSV，与 KeiLongW 输出对比
-- [ ] 把本仓库 `神经网络/SOCtarget/` LSTM 推断的 SOC 也导出 CSV，三方对比
+### 自有基线对接（L2 验证）
+- [ ] 把本仓库 MATLAB MIUKF 输出的 SOC 在 NASA 数据上跑一遍，导出 CSV
+- [ ] 把本仓库 `神经网络/SOCtarget/` LSTM 推断的 SOC 也跑 NASA，导出 CSV
+- [ ] 三方对比：本方案 fine-tuned KeiLongW vs MIUKF vs SOCtarget
 
 ## W2 · Mamba 世界模型 + ECM 安全层
 
+### Randomized Battery Usage 数据准备
+- [ ] 下载 NASA Randomized Battery Usage 1-7 `.mat` → `data/nasa_pcoe/Randomized/`
+- [ ] 写 `load_randomized_usage(path)`：解析动态负载段
+- [ ] 筛选稳定段：电流变化 < 1A 的样本（剔除剧烈跳变）
+
 ### NASA 软标签构造
-- [ ] 下载 NASA PCoE B0005/06/07/18 `.mat` → `data/nasa_pcoe/`
-- [ ] 写 NASA loader：解析 `.mat`，输出 (V, I, T, t, cycle_id) 时序
-- [ ] 用 W1 的 SOC 估计器在 NASA 上 inference → SOC 软标签
-- [ ] 用 W1 的 SOH 估计器在 NASA 每循环开始 inference → SOH 软标签
-- [ ] **关键**：评估跨数据集迁移误差（L2），SOH RMSE 若 > 5% 则做 last-layer fine-tune
+- [ ] 用 W1 的 SOC 估计器在 B0005-B0018 + Randomized 上 inference → SOC 软标签
+- [ ] 用 W1 的 SOH 估计器在每循环开始 inference → SOH 软标签
 - [ ] 拼成 `(V, I, T, SOC, SOH, action)` shape (N, L, 6) tensor
+- [ ] 保存 `outputs/world_model_train_data.pt`
 
 ### Mamba 世界模型
 - [ ] 在 `craic_pipeline/world_model_mamba.py` 实现 `BatteryWorldModel`、`build_training_dataset()`
 - [ ] 训练循环（MSE on next-step），50 epochs
-- [ ] 验证：1 步 V 预测 MAE < 5 mV，20 步漂移 < 50 mV
+- [ ] 验证目标：
+  - [ ] 1 步 V 预测 MAE < 5 mV（B0005-B0018 holdout）
+  - [ ] 20 步漂移 < 50 mV
+  - [ ] **Randomized 子集（动态负载）外推 MAE < 10 mV** ← 关键
 - [ ] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
 - [ ] 保存 `outputs/world_model.pt`
 
@@ -59,7 +81,7 @@
 - [ ] 单跑环境 1000 步，确认无异常
 - [ ] 调奖励权重：先单项调（速度→安全→老化），再加权
 - [ ] 跑 `train_sac.py --total-steps 100000`
-- [ ] tensorboard 监控曲线：episode_return 应单调上升
+- [ ] tensorboard 监控：episode_return 应单调上升
 - [ ] 保存 `outputs/sac_policy.zip`
 
 ## W4 · 评估与对比
@@ -67,17 +89,23 @@
 - [ ] 在 `craic_pipeline/eval_compare.py` 实现 CC-CV、MFCC 基线
 - [ ] 部署 SAC 策略，记录轨迹
 - [ ] 计算指标表：充至 80% 耗时、ΔSOH 单循环、过压报警次数、平均 T
-- [ ] 画 4 联子图（I/V/SOC/T over t）
+- [ ] 画 4 联子图（I/V/SOC/T over t），各策略叠加
 - [ ] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
-- [ ] 在 BatteryML 里挂 Mamba head 跑一版 SOH，加进对比表
-- [ ] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建标签
+- [ ] 在 BatteryML 里挂 Mamba head 跑一版 SOH，加进对比表（架构创新点）
+- [ ] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建 SOC/SOH 参考标签
+- [ ] 在 Zenodo 6985321 上跑 zero-shot SOC/SOH inference（W5 定量泛化输入）
 
 ## W5 · 包级扩展 + 答辩
 
 - [ ] Simulink 30 模组：每模组独立 SAC 策略，导出包级仿真
-- [ ] Zenodo WLTP 上跑 zero-shot：本方案 SOC/SOH 估计在动态行驶下的误差曲线
+- [ ] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量** L3）
+- [ ] **Zenodo 18471156 定性展示（L4）**：
+  - [ ] 下载 BatteryData.zip 解压
+  - [ ] 选其中一节电池一段时序，跑训好的 SOC/SOH 估计器 inference
+  - [ ] 画 1 张曲线图：V/I/T 输入 + SOC/SOH 输出 over time
+  - [ ] PPT 末尾配文：「在真实储能电站监测数据上，本方案 SOC/SOH 输出曲线单调、范围合理、对温度突变响应平滑——验证工业部署潜力。」
 - [ ] 端到端 Demo：插入电池参数 → 输出最优充电策略曲线
-- [ ] 可视化：注意力热图 + 世界模型预测 vs 真实 + RL I(t) 对照 + 迁移误差曲线
+- [ ] 可视化打包：注意力热图 + 世界模型预测 vs 真实 + RL I(t) 对照 + L3 + L4
 - [ ] PPT：架构图、对比表、Demo 视频
 - [ ] 完整代码包打 zip 提交
 
@@ -86,5 +114,7 @@
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
-- HUST 数据是循环聚合后的统计量（CSV），不是逐采样点时序——做 SOH 是对的（每循环一个标签），但不能直接拿来训 SOC 时序模型。
-- NASA PCoE 是 NMC 18650，HUST 是 LFP 1.1Ah，化学体系不同 → SOH head fine-tune 是必经之路，别跳。
+- NASA 三个子集 .mat 字段命名各有差异（FY08Q4 多了 ambient_temperature 字段，Randomized 含 RW1-RW7 嵌套），写 loader 时不强求统一 schema，分别处理。
+- Randomized Battery Usage 的"随机游走"段电流跳变剧烈，世界模型如果直接吞会发散——筛掉电流变化 > 1A 的样本。
+- HUST 数据本仓库已携带，但 v0.2 不进训练管线。可保留为 W4/W5 可选展示（"LFP 跨化学体系泛化曲线"）。
+- Zenodo 18471156 没有任何标签（SOC/SOH/容量/化学体系都未提及），**只能定性展示，不能用于训练或定量评估**。

@@ -1,22 +1,23 @@
-"""SOC 推断：包装 KeiLongW Stacked LSTM (TF/Keras) 模型。
+"""SOC 推断：KeiLongW Stacked LSTM (TF/Keras) warm-start + NASA fine-tune (v0.2)。
 
-用途：
-    - 在 LG 18650HG2 测试集上跑预训练权重，输出 SOC 时间序列
-    - 在 NASA PCoE B0005/06/07/18 上跑 zero-shot inference，给 RL 训练数据打 SOC 软标签
-    - 在 Zenodo 6985321 (WLTP) 上跑泛化验证
+数据策略 v0.2：
+    - KeiLongW 预训练权重（在 LG 18650HG2 上训）作为 warm-start
+    - 用 NASA BatteryAgingARC-FY08Q4（B0025-B0056，多温度多倍率）做 fine-tune
+    - fine-tune 后的模型在 NASA B0005-B0018 上 inference，给 Mamba 世界模型打 SOC 软标签
 
 输入：
-    --weights : KeiLongW release 里的 .h5 文件（lstm_soc_*.h5）
-    --data    : V/I/T 时序 CSV，列 [voltage, current, temperature]
-    --window  : 滑动窗口长度（KeiLongW 默认 100 / 200 / 300）
-    --out     : 输出 CSV 路径
+    --weights      : KeiLongW release 里的 .h5（warm-start 用）
+    --finetune-data: NASA ARC-FY08Q4 .mat 目录（fine-tune 用）
+    --data         : 推断输入 V/I/T 时序 CSV / .mat
+    --window       : 滑动窗口长度（KeiLongW 默认 100 / 200 / 300）
+    --out          : 输出 CSV 路径
 
 输出：
-    CSV 含列 [t, voltage, current, temperature, soc_pred]
+    CSV 含列 [t, voltage, current, temperature, ambient_T, soc_pred]
 
-W1 任务：跑通 LG 测试集，对齐 KeiLongW 论文 MAE。
-W2 任务：跑 NASA，输出软标签供 Mamba 世界模型训练。
-W5 任务：跑 Zenodo WLTP，与库仑积分 SOC 对比。
+W1 任务：fine-tune + 在 NASA holdout 上验证 MAE < 1.5%。
+W2 任务：跑 NASA B0005-B0018 + Randomized，输出软标签供 Mamba 训练。
+W5 任务：跑 Zenodo 6985321 (WLTP) 定量验证 + Zenodo 18471156 定性展示。
 """
 from __future__ import annotations
 
