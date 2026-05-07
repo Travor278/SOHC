@@ -127,6 +127,8 @@
 - 2026-05-07 NASA Randomized：官方 `11. Randomized Battery Usage Data Set.zip` 展开后是 7 个子目录、28 个 RW `.mat`，并不是字面 RW1-RW7；loader 已按实际文件递归解析。
 - 2026-05-07 SOC fine-tune 烟测：用 4 个 ARC 文件、1 epoch、100-step KeiLongW 权重跑通 `soc_finetune.py`，训练不再 NaN；但小样本 PCoE MAE 为 21.18%，仅证明链路可运行，不能作为 `outputs/soc_finetuned.h5` 正式验收模型。
 - 2026-05-07 SOC full fine-tune：修正 NASA discharge 电流符号（负电流为放电），只在带 `Capacity` 的 discharge cycle 内部构造 SOC 窗口，避免跨 cycle 滑窗；全 ARC、100-step、stride=20、5 epoch 已输出 `outputs/soc_finetuned.h5`，PCoE sampled holdout MAE 为 5.51%，尚未达到 `<1.5%`。20 epoch CPU 训练曾超过 20 分钟，已给脚本加入 best checkpoint/early stopping，后续需继续改标签/模型策略。
+- 2026-05-07 SOC 严格标签/内部分割：新增 per-discharge-cycle 严格 SOC 标签（每个 discharge cycle 独立积分、起点 SOC=1、到截止/容量校准终点）和 B0005/B0006/B0007 → B0018 cell holdout。两阶段 head + last LSTM 在 B0018 上最佳 MAE 为 3.48%，已优于 ARC→PCoE 的 5.51%，但仍未达到 `<1.5%`。
+- 2026-05-07 SOC 全量解冻验证：从 3.48% best 模型出发，分别用全层解冻 LR=1e-5 与 LR=1e-6 续训；训练集 MAE 下降，但 B0018 holdout 候选分别退化到 5.81% 和 5.27%，最终保留 3.48% best。结论：当前主要瓶颈不是“冻结前两层过于保守”，而是 B0018 cell-domain 差异/标签噪声；继续全量解冻会过拟合。
 - 2026-05-07 SOH baseline：纯统计 Ridge fallback 首次 NASA cell-id holdout RMSE 为 36.36%；加入容量字段构造出的 capacity-ratio 一致性特征并裁剪 SOH 到 `[0,1]` 后，`outputs/soh_baseline.pt` 的 NASA holdout RMSE 为 2.32e-13%，满足 W1 `<2%`。该基线依赖 NASA `Capacity` 字段，适合作 W1 标签一致性/软标签基准，不代表无容量标签部署能力。
 - 2026-05-07 WSL/Mamba：`Ubuntu2404` 已建 `~/.venvs/sohc-craic-py312`，PyTorch 2.11.0+cu128 在 RTX 5070 Laptop GPU (`sm_120`) 上 CUDA tensor 实测通过。`mamba-ssm` 默认全架构编译会长时间停在 nvcc/ptxas；已将源码临时 patch 为只编 `sm_120` 后成功安装 `causal-conv1d==1.6.1` 和 `mamba-ssm==2.3.1`，Mamba CUDA forward 通过。
 - 2026-05-07 WSL apt：`GET 61` 并非死锁，是安装完整 `cuda-toolkit-12-8` 时下载大包；中断后用 `sudo dpkg --configure -a` 修复，最终 `nvcc` 12.8.93 可用。后续优先装最小 `cuda-nvcc-12-8`/headers，避免完整 toolkit 下载过久。
