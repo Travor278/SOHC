@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv_craic/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (do not commit large datasets — fetch via scripts/download_datasets.md)
+data/lg_hg2/**
+data/nasa_pcoe/**
+data/zenodo_6985321/**
+!data/**/.gitkeep
+!data/**/README.md
+!data/HUST data/**
+
+# External repos cloned at setup time
+external/KeiLongW/
+external/BatteryML/
+!external/.gitkeep
+!external/README.md
+
+# Model checkpoints and outputs
+outputs/**
+!outputs/.gitkeep
+*.pt
+*.h5
+*.ckpt
+*.zip
+checkpoints/
+
+# MATLAB
+*.asv
+*.mex*
+slprj/
+
+# Logs
+*.log
+runs/
+wandb/
+mlruns/
+
+# Large existing files we don't want to track
+*.docx
+*.pdf
+*.fig
+*.tif

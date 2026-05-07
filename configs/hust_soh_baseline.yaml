@@ -1,0 +1,27 @@
+# BatteryML 风格的 SOH 训练配置（W1 baseline）
+# 实际字段以 BatteryML repo 内 configs/ 为准（W1 跑通后微调）
+
+dataset:
+  name: HUST
+  path: data/HUST data/
+  val_ratio: 0.2
+  split_by: cell_id    # 按电池编号分训练/验证集，避免 cell-level 数据泄漏
+
+model:
+  type: variance       # baseline：手工特征 + Ridge 回归（BatteryML 自带）
+  # 后续可换成 cnn / mlp / mamba（W4）
+
+train:
+  epochs: 100
+  batch_size: 32
+  optimizer: adam
+  learning_rate: 1.0e-3
+  early_stop_patience: 10
+
+target:
+  type: SOH            # 容量保持率
+  scale: percentage    # 0~100 而非 0~1
+
+logging:
+  out_dir: outputs/runs/hust_soh_baseline
+  save_best_only: true
