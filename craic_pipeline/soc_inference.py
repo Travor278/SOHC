@@ -96,26 +96,30 @@ def infer_model_window(model) -> int | None:
     return None if input_shape[1] is None else int(input_shape[1])
 
 
-def preprocess_sequence(df, window: int, scaler_path: Path | None = None):
+def preprocess_sequence(df, window: int, scaler_path: Path | None = None, *, stride: int = 1):
     """Convert NASA/LG V/I/T samples into normalized sliding SOC windows.
 
     Args:
         df: DataFrame with voltage/current/temperature columns.
         window: Number of previous samples per LSTM input window.
         scaler_path: Optional KeiLongW scaler pickle from release artifacts.
+        stride: Step between adjacent LSTM windows from the same sequence.
 
     Returns:
         `(X, rows)` where `X` is `(N, window, 3)` and `rows` are aligned input rows.
     """
     if window <= 0:
         raise ValueError("window must be positive")
-    features = _extract_vit(df)
+    if stride <= 0:
+        raise ValueError("stride must be positive")
+    features, valid_positions = _extract_vit(df)
     if len(features) < window:
         raise ValueError(f"need at least {window} samples, got {len(features)}")
 
     scaled = _scale_features(features, scaler_path)
-    X = np.stack([scaled[i - window + 1 : i + 1] for i in range(window - 1, len(scaled))])
-    aligned_rows = df.iloc[window - 1 :].reset_index(drop=True)
+    endpoints = np.arange(window - 1, len(scaled), stride)
+    X = np.stack([scaled[i - window + 1 : i + 1] for i in endpoints])
+    aligned_rows = df.iloc[valid_positions[endpoints]].copy()
     return X.astype(np.float32), aligned_rows
 
 
@@ -129,8 +133,8 @@ def predict_soc(model, X) -> "np.ndarray":
     return np.clip(pred.astype(float), 0.0, 1.0)
 
 
-def _extract_vit(df: pd.DataFrame) -> np.ndarray:
-    """Extract finite voltage/current/temperature columns from input samples."""
+def _extract_vit(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Extract finite V/I/T columns and original row positions from samples."""
     columns = []
     for logical_name, candidates in _FEATURE_COLUMNS.items():
         match = next((col for col in candidates if col in df.columns), None)
@@ -142,7 +146,7 @@ def _extract_vit(df: pd.DataFrame) -> np.ndarray:
         columns.append(match)
     values = df[columns].to_numpy(dtype=float)
     mask = np.isfinite(values).all(axis=1)
-    return values[mask]
+    return values[mask], np.flatnonzero(mask)
 
 
 def _scale_features(features: np.ndarray, scaler_path: Path | None) -> np.ndarray:

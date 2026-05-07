@@ -40,10 +40,8 @@ def build_soc_training_set(
         if len(df) < window:
             continue
         labels = _estimate_soc_labels(df)
-        X, rows = preprocess_sequence(df, window)
-        y = labels[rows.index.to_numpy() + window - 1]
-        X = X[::stride]
-        y = y[::stride]
+        X, rows = preprocess_sequence(df, window, stride=stride)
+        y = labels[rows.index.to_numpy(dtype=int)]
         if idx >= holdout_start:
             val_X.append(X)
             val_y.append(y)
@@ -119,7 +117,7 @@ def evaluate_on_pcoe(weights: Path, pcoe_dir: Path, *, window: int | None = None
         labels = _estimate_soc_labels(df)
         X, rows = preprocess_sequence(df, window)
         X_all.append(X)
-        y_all.append(labels[rows.index.to_numpy() + window - 1])
+        y_all.append(labels[rows.index.to_numpy(dtype=int)])
     if not X_all:
         raise ValueError("not enough PCoE data to evaluate SOC")
     X = np.concatenate(X_all)
