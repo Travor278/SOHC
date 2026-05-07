@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from craic_pipeline.nasa_loader import load_arc_fy08q4, load_pcoe_basic
-from craic_pipeline.soc_inference import load_keilongw_model, preprocess_sequence
+from craic_pipeline.soc_inference import infer_model_window, load_keilongw_model, preprocess_sequence
 
 
 def build_soc_training_set(
@@ -63,7 +63,7 @@ def finetune_soc_model(
     arc_dir: Path,
     out: Path,
     *,
-    window: int = 100,
+    window: int | None = None,
     epochs: int = 20,
     batch_size: int = 128,
     stride: int = 10,
@@ -71,6 +71,10 @@ def finetune_soc_model(
 ) -> dict:
     """Fine-tune the KeiLongW SOC model and save a Keras `.h5` artifact."""
     model = load_keilongw_model(weights)
+    fixed_window = infer_model_window(model)
+    window = window or fixed_window or 100
+    if fixed_window is not None and window != fixed_window:
+        raise ValueError(f"weights require window={fixed_window}, got window={window}")
     _freeze_first_lstm_layers(model, count=2)
     X_train, y_train, X_val, y_val = build_soc_training_set(
         arc_dir,
@@ -99,9 +103,10 @@ def finetune_soc_model(
     }
 
 
-def evaluate_on_pcoe(weights: Path, pcoe_dir: Path, *, window: int = 100) -> dict:
+def evaluate_on_pcoe(weights: Path, pcoe_dir: Path, *, window: int | None = None) -> dict:
     """Evaluate a fine-tuned SOC model on NASA B0005-B0018 holdout files."""
     model = load_keilongw_model(weights)
+    window = window or infer_model_window(model) or 100
     files = sorted(Path(pcoe_dir).rglob("*.mat"))
     if not files:
         raise FileNotFoundError(f"no PCoE .mat files found under {pcoe_dir}")
@@ -185,7 +190,7 @@ def main() -> None:
     parser.add_argument("--arc-dir", type=Path, default=Path("data/nasa_pcoe/ARC-FY08Q4"))
     parser.add_argument("--pcoe-dir", type=Path, default=Path("data/nasa_pcoe/B000x"))
     parser.add_argument("--out", type=Path, default=Path("outputs/soc_finetuned.h5"))
-    parser.add_argument("--window", type=int, default=100)
+    parser.add_argument("--window", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--stride", type=int, default=10)

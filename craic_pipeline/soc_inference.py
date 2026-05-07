@@ -86,6 +86,16 @@ def load_keilongw_model(weights_path: Path):
             ) from weight_error
 
 
+def infer_model_window(model) -> int | None:
+    """Infer fixed LSTM window length from a loaded KeiLongW Keras model."""
+    input_shape = getattr(model, "input_shape", None)
+    if isinstance(input_shape, list):
+        input_shape = input_shape[0]
+    if input_shape is None or len(input_shape) < 2:
+        return None
+    return None if input_shape[1] is None else int(input_shape[1])
+
+
 def preprocess_sequence(df, window: int, scaler_path: Path | None = None):
     """Convert NASA/LG V/I/T samples into normalized sliding SOC windows.
 
@@ -193,14 +203,18 @@ def main():
     parser = argparse.ArgumentParser(description="SOC inference via KeiLongW LSTM")
     parser.add_argument("--weights", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--window", type=int, default=100)
+    parser.add_argument("--window", type=int, default=None)
     parser.add_argument("--scaler", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=Path("outputs/soc_pred.csv"))
     args = parser.parse_args()
 
     df = _read_input_frame(args.data)
-    X, rows = preprocess_sequence(df, args.window, args.scaler)
     model = load_keilongw_model(args.weights)
+    fixed_window = infer_model_window(model)
+    window = args.window or fixed_window or 100
+    if fixed_window is not None and window != fixed_window:
+        raise ValueError(f"weights require window={fixed_window}, got --window={window}")
+    X, rows = preprocess_sequence(df, window, args.scaler)
     rows = rows.copy()
     rows["soc_pred"] = predict_soc(model, X)
     args.out.parent.mkdir(parents=True, exist_ok=True)
