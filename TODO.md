@@ -125,6 +125,7 @@
 - 2026-05-07 KeiLongW：release `v1.0` 含 `trained_model.zip`，已解压到 `external/KeiLongW/trained_model/`，其中包含多个 `.h5` SOC 预训练权重。
 - 2026-05-07 NASA 数据包命名与 TODO 略有出入：官方 `5. Battery Data Set.zip` 中 B0005/B0006/B0007/B0018 来自 `1. BatteryAgingARC-FY08Q4.zip`；B0025-B0056 来自后续 ARC zip 分包，已按项目约定放入 `data/nasa_pcoe/ARC-FY08Q4/`。
 - 2026-05-07 NASA Randomized：官方 `11. Randomized Battery Usage Data Set.zip` 展开后是 7 个子目录、28 个 RW `.mat`，并不是字面 RW1-RW7；loader 已按实际文件递归解析。
+- 2026-05-07 SOC fine-tune 烟测：用 4 个 ARC 文件、1 epoch、100-step KeiLongW 权重跑通 `soc_finetune.py`，训练不再 NaN；但小样本 PCoE MAE 为 21.18%，仅证明链路可运行，不能作为 `outputs/soc_finetuned.h5` 正式验收模型。
 - 2026-05-07 SOH baseline：轻量 Ridge/Variance fallback 已保存 `outputs/soh_baseline.pt` 和 `outputs/soh_baseline.metrics.json`，但 NASA cell-id holdout RMSE 为 36.36%，未达到 `<2%` 验收，需要后续换更强的 BatteryML/CNN/XGBoost 特征方案或重新定义合理 holdout。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
