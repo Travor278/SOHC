@@ -43,11 +43,7 @@ def build_soc_training_set(
         if len(df) < window:
             continue
         labels = _estimate_soc_labels(df)
-        X, rows = preprocess_sequence(df, window, stride=stride)
-        y = labels[rows.index.to_numpy(dtype=int)]
-        finite = np.isfinite(y)
-        X = X[finite]
-        y = y[finite]
+        X, y = _labeled_cycle_windows(df, labels, window=window, stride=stride)
         if len(y) == 0:
             continue
         if idx >= holdout_start:
@@ -75,9 +71,14 @@ def finetune_soc_model(
     stride: int = 10,
     max_samples: int = 200_000,
     limit_files: int | None = None,
+    learning_rate: float = 1e-3,
+    early_stop_patience: int = 5,
 ) -> dict:
     """Fine-tune the KeiLongW SOC model and save a Keras `.h5` artifact."""
+    from tensorflow import keras
+
     model = load_keilongw_model(weights)
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate), loss="mse", metrics=["mae"])
     fixed_window = infer_model_window(model)
     window = window or fixed_window or 100
     if fixed_window is not None and window != fixed_window:
@@ -90,22 +91,46 @@ def finetune_soc_model(
         max_samples=max_samples,
         limit_files=limit_files,
     )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    callbacks = [
+        keras.callbacks.ModelCheckpoint(
+            filepath=str(out),
+            monitor="val_mae",
+            mode="min",
+            save_best_only=True,
+            save_weights_only=False,
+            verbose=1,
+        )
+    ]
+    if early_stop_patience > 0:
+        callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor="val_mae",
+                mode="min",
+                patience=early_stop_patience,
+                restore_best_weights=True,
+            )
+        )
     history = model.fit(
         X_train,
         y_train,
         validation_data=(X_val, y_val),
         epochs=epochs,
         batch_size=batch_size,
+        callbacks=callbacks,
         verbose=2,
     )
+    if out.exists():
+        model = load_keilongw_model(out)
     pred = np.asarray(model.predict(X_val, verbose=0)).reshape(len(X_val), -1)[:, 0]
     mae = float(np.mean(np.abs(np.clip(pred, 0.0, 1.0) - y_val)))
-    out.parent.mkdir(parents=True, exist_ok=True)
-    model.save(out)
+    if not out.exists():
+        model.save(out)
     return {
         "train_samples": int(len(X_train)),
         "holdout_samples": int(len(X_val)),
         "limit_files": limit_files,
+        "learning_rate": learning_rate,
         "holdout_mae_fraction": mae,
         "holdout_mae_percent": mae * 100.0,
         "history": {key: [float(v) for v in values] for key, values in history.history.items()},
@@ -133,12 +158,10 @@ def evaluate_on_pcoe(
         if len(df) < window:
             continue
         labels = _estimate_soc_labels(df)
-        X, rows = preprocess_sequence(df, window, stride=stride)
-        y = labels[rows.index.to_numpy(dtype=int)]
-        finite = np.isfinite(y)
-        if np.any(finite):
-            X_all.append(X[finite])
-            y_all.append(y[finite])
+        X, y = _labeled_cycle_windows(df, labels, window=window, stride=stride)
+        if len(y):
+            X_all.append(X)
+            y_all.append(y)
     if not X_all:
         raise ValueError("not enough PCoE data to evaluate SOC")
     X = np.concatenate(X_all)
@@ -167,23 +190,54 @@ def _frame_from_loader(file_path: Path, loader) -> pd.DataFrame:
 
 def _estimate_soc_labels(df: pd.DataFrame) -> np.ndarray:
     """Create approximate SOC labels from NASA current/time/capacity samples."""
-    labels = np.empty(len(df), dtype=float)
+    labels = np.full(len(df), np.nan, dtype=float)
     for _, group in df.groupby("cycle_id", sort=False):
         idx = group.index.to_numpy()
         current = np.nan_to_num(group["current"].to_numpy(dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
         time = np.nan_to_num(group["t"].to_numpy(dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
         capacity = group["capacity"].replace([np.inf, -np.inf], np.nan).dropna()
-        cap = float(capacity.iloc[0]) if not capacity.empty and capacity.iloc[0] > 0 else 1.8
+        if capacity.empty or capacity.iloc[0] <= 0:
+            continue
+        cap = float(capacity.iloc[0])
+        mean_current = float(np.nanmean(current)) if current.size else 0.0
+        if mean_current >= -0.05:
+            continue
         dt = np.diff(time, prepend=time[0])
         dt = np.where(np.isfinite(dt) & (dt >= 0), dt, 0.0)
         ah = np.cumsum(np.abs(current) * dt) / 3600.0
         terminal_ah = float(ah[-1]) if np.isfinite(ah[-1]) else 0.0
         span = max(terminal_ah, cap, 1e-6)
-        median_current = float(np.nanmedian(current)) if current.size else 0.0
-        discharged = median_current > 0
-        soc = 1.0 - ah / span if discharged else ah / span
+        soc = 1.0 - ah / span
         labels[idx] = np.clip(soc, 0.0, 1.0)
     return labels
+
+
+def _labeled_cycle_windows(
+    df: pd.DataFrame,
+    labels: np.ndarray,
+    *,
+    window: int,
+    stride: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build SOC windows within labeled NASA cycles without crossing cycles."""
+    X_parts: list[np.ndarray] = []
+    y_parts: list[np.ndarray] = []
+    for _, group in df.groupby("cycle_id", sort=False):
+        group_idx = group.index.to_numpy(dtype=int)
+        if not np.isfinite(labels[group_idx]).any() or len(group) < window:
+            continue
+        try:
+            X, rows = preprocess_sequence(group, window, stride=stride)
+        except ValueError:
+            continue
+        y = labels[rows.index.to_numpy(dtype=int)]
+        finite = np.isfinite(y)
+        if np.any(finite):
+            X_parts.append(X[finite])
+            y_parts.append(y[finite])
+    if not X_parts:
+        return np.empty((0, window, 3), dtype=np.float32), np.array([], dtype=float)
+    return np.concatenate(X_parts), np.concatenate(y_parts)
 
 
 def _freeze_first_lstm_layers(model, *, count: int) -> None:
@@ -218,6 +272,8 @@ def main() -> None:
     parser.add_argument("--stride", type=int, default=10)
     parser.add_argument("--max-samples", type=int, default=200_000)
     parser.add_argument("--limit-files", type=int, default=None)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--early-stop-patience", type=int, default=5)
     parser.add_argument("--eval-stride", type=int, default=10)
     parser.add_argument("--eval-max-samples", type=int, default=50_000)
     args = parser.parse_args()
@@ -232,6 +288,8 @@ def main() -> None:
         stride=args.stride,
         max_samples=args.max_samples,
         limit_files=args.limit_files,
+        learning_rate=args.learning_rate,
+        early_stop_patience=args.early_stop_patience,
     )
     if args.pcoe_dir.exists():
         try:
