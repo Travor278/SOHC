@@ -35,6 +35,7 @@ optuna>=3.5
 einops>=0.7
 tensorboard>=2.13
 jupyter>=1.0
+pytest>=8.0
 
 # === MATLAB / Simulink 数据互通（可选，仅 W5）===
 # scipy.io 已含 .mat 读写，无需额外
