@@ -84,13 +84,13 @@
 
 ## W3 · RL 训练
 
-- [ ] 在 `craic_pipeline/rl_env.py` 实现 `BatteryChargingEnv`（继承 `gymnasium.Env`）
-- [ ] 实现 `compute_reward()`：4 项加权和（speed / V / T / aging）
-- [ ] 单跑环境 1000 步，确认无异常
+- [x] 在 `craic_pipeline/rl_env.py` 实现 `BatteryChargingEnv`（继承 `gymnasium.Env`）
+- [x] 实现 `compute_reward()`：4 项加权和（speed / V / T / aging）
+- [x] 单跑环境 1000 步，确认无异常
 - [ ] 调奖励权重：先单项调（速度→安全→老化），再加权
-- [ ] 跑 `train_sac.py --total-steps 100000`
+- [x] 跑 `train_sac.py --total-steps 100000`
 - [ ] tensorboard 监控：episode_return 应单调上升
-- [ ] 保存 `outputs/sac_policy.zip`
+- [x] 保存 `outputs/sac_policy.zip`
 
 ## W4 · 评估与对比
 
@@ -138,6 +138,11 @@
 - 2026-05-08 W2 rollout：重新生成带 `traces` 的 `outputs/world_model_train_data.pt` 后，B0018 holdout 20-step open-loop voltage drift MAE 为 8.04 mV、p95 为 22.03 mV，满足 `<50 mV`。
 - 2026-05-08 W2 Randomized：新增 `--cache-dir` 分文件 shard 缓存，并按文件大小优先解析 Randomized。6 个最小 Randomized `.mat` shard 已缓存；在该动态负载子集上，PCoE 训练好的 residual Mamba 1-step V MAE 为 2.39 mV，20-step 采样 rollout V MAE 为 7.71 mV，满足 Randomized 子集 `<10 mV`。注意：这不是 28 个 Randomized 文件的全量验收；全量仍建议后台长跑或继续增量缓存。
 - 2026-05-08 W2 ECM：`cross_check_against_matlab()` 使用 `savemat_2order.mat` 的 `I/SOC/Ts` 和独立二阶 RC 参考公式做 Python 对照，最大误差 < 1 mV；1000 个随机动作投影后端电压均满足 `V_min <= V_pred <= V_max`。
+- 2026-05-08 W3 动作符号：NASA/W2 张量里正电流对应充电、负电流对应放电；MATLAB ECM 参数口径更接近正电流放电。因此 `BatteryChargingEnv` 对 RL/世界模型暴露正充电电流 `[0, I_max]`，传给 ECM safety layer 时内部反号，并将世界模型电压输出硬裁剪到 `[V_min, V_max]` 作为 L3 安全约束。
+- 2026-05-08 W3 WSL 依赖：`Ubuntu2404` 的 `~/.venvs/sohc-craic-py312` 已补装 `gymnasium==1.2.3`、`stable-baselines3==2.8.0`、`tensorboard==2.20.0`。Windows `.venv_craic` 可跑 W3 单测，但 Mamba checkpoint 加载/训练仍优先走 WSL。
+- 2026-05-08 W3 SAC：WSL GPU + Mamba 下 `train_sac.py --total-steps 100000 --max-steps 200` 完成，平均约 86 fps，保存 `outputs/sac_policy.zip`；10 个 deterministic 200-step eval episode 无越压，平均 SOC 约从 0.19 增至 0.51。将同一 policy 放到 600-step env 时 10 次中 7 次到达 SOC 0.8，仍无越压。
+- 2026-05-08 W3 caveat：`--max-steps 600` 正式重训在 45.5k steps 左右被 WSL OOM kill（dmesg 显示 python RSS 约 12.9 GB），未覆盖已保存的 100k policy。`train_sac.py` 已新增 `--checkpoint-freq` 和 `--policy-device`，后续长跑建议用较小 buffer / CPU policy / checkpoint 组合重新调奖励。
+- 2026-05-08 W3 TensorBoard：`outputs/runs/sac/SAC_1` 显示 100k 训练回报有阶段性上升（中段接近/略高于 0），但并非单调，末段回落到约 -0.94；因此“episode_return 应单调上升”和完整奖励调权仍保留未完成。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
