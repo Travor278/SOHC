@@ -8,6 +8,7 @@ the same API falls back to a two-layer GRU.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -169,6 +170,7 @@ def build_world_tensors(
     use_soc_model: bool = True,
     limit_pcoe_files: int | None = None,
     limit_randomized_files: int | None = None,
+    cache_dir: Path | None = None,
 ) -> dict:
     """Build W2 tensor package with SOC/SOH soft labels and source metadata."""
     del soh_ckpt
@@ -186,6 +188,7 @@ def build_world_tensors(
             soc_source = f"strict_coulomb_fallback_after_soc_error:{exc!r}"
 
     pieces: list[tuple[np.ndarray, np.ndarray, list[str], list[str]]] = []
+    traces: list[dict] = []
     for subset, loader, root in (
         ("pcoe", load_pcoe_basic, Path(pcoe_dir)),
         ("randomized", load_randomized_usage, Path(randomized_dir)),
@@ -193,36 +196,26 @@ def build_world_tensors(
         if not root.exists():
             continue
         files = _mat_files(root)
+        if subset == "randomized":
+            files = sorted(files, key=lambda item: item.stat().st_size)
         limit = limit_pcoe_files if subset == "pcoe" else limit_randomized_files
         if limit is not None:
             files = files[:limit]
         for file_path in files:
-            V, I, T, t, cycle_id, ambient, capacity = loader(file_path)
-            if not V.size:
-                continue
-            df = _frame_from_arrays(V, I, T, t, cycle_id, ambient, capacity)
-            soc = _soc_soft_labels(df, model=soc_model, window=soc_window)
-            soh = _soh_soft_labels(capacity)
-            windows = _series_to_windows(
-                V,
-                I,
-                T,
-                cycle_id,
-                capacity,
-                soc=soc,
-                soh=soh,
+            shard = _load_or_build_file_shard(
+                file_path,
+                subset=subset,
+                loader=loader,
+                soc_model=soc_model,
+                soc_window=soc_window,
                 seq_len=seq_len,
                 stride=stride,
+                cache_dir=cache_dir,
             )
-            for X_part, y_part in windows:
-                pieces.append(
-                    (
-                        X_part,
-                        y_part,
-                        [subset] * len(y_part),
-                        [file_path.stem] * len(y_part),
-                    )
-                )
+            if shard is None:
+                continue
+            traces.extend(shard["traces"])
+            pieces.append((shard["X"], shard["y"], shard["subset"].tolist(), shard["cell"].tolist()))
     if not pieces:
         raise FileNotFoundError("no NASA windows found for world-model training")
 
@@ -236,6 +229,7 @@ def build_world_tensors(
         "y": y.astype(np.float32),
         "subset": subsets,
         "cell": cells,
+        "traces": traces,
         "schema": ["SOC", "SOH", "V", "I", "T", "action_current"],
         "target_schema": ["SOC_next", "V_next", "T_next", "delta_SOH"],
         "meta": {
@@ -264,6 +258,62 @@ def save_world_tensors(bundle: dict, out: Path) -> None:
 def load_world_tensors(path: Path) -> dict:
     """Load W2 train tensors from a `.pt` package."""
     return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def _load_or_build_file_shard(
+    file_path: Path,
+    *,
+    subset: str,
+    loader,
+    soc_model,
+    soc_window: int | None,
+    seq_len: int,
+    stride: int,
+    cache_dir: Path | None,
+) -> dict | None:
+    """Load or build one cached NASA file shard for W2 tensors."""
+    shard_path = _shard_path(cache_dir, subset, file_path) if cache_dir else None
+    if shard_path is not None and shard_path.exists():
+        return torch.load(shard_path, map_location="cpu", weights_only=False)
+
+    V, I, T, t, cycle_id, ambient, capacity = loader(file_path)
+    if not V.size:
+        return None
+    df = _frame_from_arrays(V, I, T, t, cycle_id, ambient, capacity)
+    soc = _soc_soft_labels(df, model=soc_model, window=soc_window, fast_when_unlabeled=subset == "randomized")
+    soh = _soh_soft_labels(capacity)
+    windows = _series_to_windows(
+        V,
+        I,
+        T,
+        cycle_id,
+        capacity,
+        soc=soc,
+        soh=soh,
+        seq_len=seq_len,
+        stride=stride,
+    )
+    if not windows:
+        return None
+    X = np.concatenate([item[0] for item in windows], axis=0)
+    y = np.concatenate([item[1] for item in windows], axis=0)
+    shard = {
+        "X": X.astype(np.float32),
+        "y": y.astype(np.float32),
+        "subset": np.asarray([subset] * len(y), dtype=object),
+        "cell": np.asarray([file_path.stem] * len(y), dtype=object),
+        "traces": _series_to_traces(V, I, T, cycle_id, soc=soc, soh=soh, subset=subset, cell=file_path.stem),
+    }
+    if shard_path is not None:
+        shard_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(shard, shard_path)
+    return shard
+
+
+def _shard_path(cache_dir: Path | None, subset: str, file_path: Path) -> Path:
+    """Return a stable shard cache path for one NASA `.mat` file."""
+    safe_parent = hashlib.sha1(str(file_path.parent).encode("utf-8")).hexdigest()[:8]
+    return Path(cache_dir) / subset / f"{file_path.stem}_{safe_parent}.pt"
 
 
 def train_world_model(
@@ -340,6 +390,81 @@ def evaluate_world_model(
     }
 
 
+@torch.no_grad()
+def evaluate_rollout_drift(
+    model: BatteryWorldModel,
+    bundle: dict,
+    *,
+    horizon: int = 20,
+    seq_len: int | None = None,
+    stride: int = 64,
+    max_rollouts: int | None = None,
+    cells: list[str] | None = None,
+    subsets: list[str] | None = None,
+    device: torch.device | str | None = None,
+) -> dict:
+    """Evaluate open-loop multi-step V drift with true future action current."""
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    model = model.to(device)
+    model.eval()
+    seq_len = int(seq_len or bundle.get("meta", {}).get("seq_len", 64))
+    cell_filter = {cell.upper() for cell in cells} if cells else None
+    subset_filter = {subset.lower() for subset in subsets} if subsets else None
+    errors_mV: list[float] = []
+    counts = 0
+    for trace in bundle.get("traces", []):
+        cell = str(trace.get("cell", "")).upper()
+        subset = str(trace.get("subset", "")).lower()
+        if cell_filter is not None and cell not in cell_filter:
+            continue
+        if subset_filter is not None and subset not in subset_filter:
+            continue
+        features = np.asarray(trace["features"], dtype=np.float32)
+        if len(features) <= seq_len + horizon:
+            continue
+        for start in range(0, len(features) - seq_len - horizon, stride):
+            hist = torch.from_numpy(features[start : start + seq_len].copy()).to(device).unsqueeze(0)
+            pred_soh = float(hist[0, -1, 1].detach().cpu())
+            for step_idx in range(horizon):
+                pred = model(hist).squeeze(0).detach()
+                future_row = features[start + seq_len + step_idx]
+                errors_mV.append(abs(float(pred[1].detach().cpu()) - float(future_row[2])) * 1000.0)
+                next_action = float(future_row[5])
+                delta_soh = max(float(pred[3].detach().cpu()), 0.0)
+                pred_soh = float(np.clip(pred_soh - delta_soh, 0.0, 1.2))
+                next_feature = torch.tensor(
+                    [[float(pred[0].clamp(0.0, 1.0)), pred_soh, float(pred[1]), next_action, float(pred[2]), next_action]],
+                    dtype=hist.dtype,
+                    device=device,
+                )
+            hist = torch.cat([hist[:, 1:], next_feature.unsqueeze(0)], dim=1)
+            counts += 1
+            if max_rollouts is not None and counts >= max_rollouts:
+                break
+        if max_rollouts is not None and counts >= max_rollouts:
+            break
+    if not errors_mV:
+        raise ValueError("no traces available for rollout drift evaluation")
+    return {
+        "horizon": int(horizon),
+        "rollouts": int(counts),
+        "max_rollouts": None if max_rollouts is None else int(max_rollouts),
+        "voltage_mae_mV": float(np.mean(errors_mV)),
+        "voltage_p95_mV": float(np.percentile(errors_mV, 95)),
+        "cells": sorted(cell_filter) if cell_filter else None,
+        "subsets": sorted(subset_filter) if subset_filter else None,
+    }
+
+
+def load_world_model_checkpoint(path: Path) -> tuple[BatteryWorldModel, dict]:
+    """Load a saved W2 world-model checkpoint and metrics."""
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    cfg = WorldModelConfig(**ckpt["cfg"])
+    model = BatteryWorldModel(cfg)
+    model.load_state_dict(ckpt["state_dict"])
+    return model, ckpt.get("metrics", {})
+
+
 def split_dataset(dataset: TensorDataset, val_ratio: float = 0.2) -> tuple[TensorDataset, TensorDataset]:
     """Deterministically split a tensor dataset into train/validation parts."""
     if not 0.0 < val_ratio < 1.0:
@@ -400,6 +525,38 @@ def _series_to_windows(
     return outputs
 
 
+def _series_to_traces(
+    V: np.ndarray,
+    I: np.ndarray,
+    T: np.ndarray,
+    cycle_id: np.ndarray,
+    *,
+    soc: np.ndarray,
+    soh: np.ndarray,
+    subset: str,
+    cell: str,
+) -> list[dict]:
+    """Convert per-cycle NASA series into continuous W2 rollout traces."""
+    traces = []
+    for cid in np.unique(cycle_id):
+        idx = np.where(cycle_id == cid)[0]
+        if idx.size < 2:
+            continue
+        features = np.column_stack([soc[idx], soh[idx], V[idx], I[idx], T[idx], I[idx]])
+        finite = np.isfinite(features).all(axis=1)
+        if finite.sum() < 2:
+            continue
+        traces.append(
+            {
+                "subset": subset,
+                "cell": cell,
+                "cycle_id": float(cid),
+                "features": features[finite].astype(np.float32),
+            }
+        )
+    return traces
+
+
 def _window_one_cycle(features: np.ndarray, *, seq_len: int, stride: int) -> tuple[np.ndarray, np.ndarray]:
     """Create `(X,y)` next-step windows for one NASA cycle."""
     X_parts = []
@@ -446,9 +603,13 @@ def _frame_from_arrays(
     )
 
 
-def _soc_soft_labels(df: pd.DataFrame, *, model=None, window: int | None = None) -> np.ndarray:
+def _soc_soft_labels(df: pd.DataFrame, *, model=None, window: int | None = None, fast_when_unlabeled: bool = False) -> np.ndarray:
     """Infer SOC with W1 Keras weights, falling back to strict NASA labels."""
     from craic_pipeline.soc_finetune import _estimate_soc_labels
+
+    capacity = df["capacity"].to_numpy(dtype=float) if "capacity" in df else np.array([], dtype=float)
+    if fast_when_unlabeled and not np.any(np.isfinite(capacity) & (capacity > 0)):
+        return _approx_soc(df["current"].to_numpy(dtype=float), capacity)
 
     labels = np.full(len(df), np.nan, dtype=float)
     if model is not None:
@@ -467,6 +628,8 @@ def _soc_soft_labels(df: pd.DataFrame, *, model=None, window: int | None = None)
     labels[missing] = fallback[missing]
     if np.isfinite(labels).any():
         labels = _fill_nan_1d(labels)
+    else:
+        labels = _approx_soc(df["current"].to_numpy(dtype=float), capacity)
     return labels
 
 
@@ -551,9 +714,16 @@ def main() -> None:
     parser.add_argument("--max-windows", type=int, default=100_000)
     parser.add_argument("--limit-pcoe-files", type=int, default=None)
     parser.add_argument("--limit-randomized-files", type=int, default=None)
+    parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--val-cells", nargs="*", default=None)
+    parser.add_argument("--eval-rollout", action="store_true")
+    parser.add_argument("--rollout-horizon", type=int, default=20)
+    parser.add_argument("--rollout-stride", type=int, default=64)
+    parser.add_argument("--max-rollouts", type=int, default=None)
+    parser.add_argument("--rollout-cells", nargs="*", default=None)
+    parser.add_argument("--rollout-subsets", nargs="*", default=None)
     parser.add_argument("--gru-fallback", action="store_true", help="Force GRU when mamba-ssm is unavailable")
     parser.add_argument("--build-only", action="store_true", help="Only build and save W2 train tensors")
     args = parser.parse_args()
@@ -573,10 +743,27 @@ def main() -> None:
             use_soc_model=not args.no_soc_model,
             limit_pcoe_files=args.limit_pcoe_files,
             limit_randomized_files=args.limit_randomized_files,
+            cache_dir=args.cache_dir,
         )
         save_world_tensors(bundle, args.dataset_out)
     if args.build_only:
         print(json.dumps(bundle["meta"], indent=2))
+        return
+    if args.eval_rollout:
+        model, previous_metrics = load_world_model_checkpoint(args.out)
+        rollout = evaluate_rollout_drift(
+            model,
+            bundle,
+            horizon=args.rollout_horizon,
+            seq_len=args.seq_len,
+            stride=args.rollout_stride,
+            max_rollouts=args.max_rollouts,
+            cells=args.rollout_cells,
+            subsets=args.rollout_subsets,
+        )
+        metrics = {**previous_metrics, "rollout": rollout}
+        args.out.with_suffix(".metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+        print(json.dumps(rollout, indent=2))
         return
 
     dataset = tensors_to_dataset(bundle)
@@ -594,6 +781,20 @@ def main() -> None:
     )
     metrics["dataset"] = bundle.get("meta", {})
     metrics["final_val"] = evaluate_world_model(model, val_ds, batch_size=args.batch_size)
+    if bundle.get("traces"):
+        try:
+            metrics["rollout"] = evaluate_rollout_drift(
+                model,
+                bundle,
+                horizon=args.rollout_horizon,
+                seq_len=args.seq_len,
+                stride=args.rollout_stride,
+                max_rollouts=args.max_rollouts,
+                cells=args.rollout_cells or args.val_cells,
+                subsets=args.rollout_subsets,
+            )
+        except Exception as exc:
+            metrics["rollout_error"] = repr(exc)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": model.state_dict(), "cfg": asdict(cfg), "metrics": metrics}, args.out)
     args.out.with_suffix(".metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
