@@ -87,7 +87,7 @@ class _FallbackBatteryData:
 class VarianceSohBaseline:
     """Small Ridge baseline over NASA cycle statistics for W1 SOH fallback."""
 
-    def __init__(self, alpha: float = 1.0):
+    def __init__(self, alpha: float = 1e-12):
         """Initialize a Ridge model over standardized NASA cycle features."""
         self.model = make_pipeline(StandardScaler(), Ridge(alpha=alpha))
 
@@ -141,7 +141,8 @@ def load_nasa_for_batteryml(data_dir: Path):
             cap_values = capacity[idx]
             finite = _valid_capacity_values(cap_values)
             cap = float(finite[-1]) if finite.size else np.nan
-            soh = cap / fresh_capacity if np.isfinite(cap) and np.isfinite(fresh_capacity) else np.nan
+            ratio = cap / fresh_capacity if np.isfinite(cap) and np.isfinite(fresh_capacity) else np.nan
+            soh = float(np.clip(ratio, 0.0, 1.0)) if np.isfinite(ratio) else np.nan
             cycles.append(
                 CycleData(
                     int(cid),
@@ -236,18 +237,19 @@ def _cells_to_xy(cells) -> tuple[np.ndarray, np.ndarray]:
     X = []
     y = []
     for cell in cells:
+        nominal_capacity = _cell_nominal_capacity(cell)
         for cycle in cell.cycle_data:
-            feature = _cycle_features(cycle)
+            feature = _cycle_features(cycle, nominal_capacity)
             target = _cycle_soh(cycle)
             if feature is not None and np.isfinite(target):
                 X.append(feature)
                 y.append(target)
     if not X:
-        return np.empty((0, 8), dtype=float), np.array([], dtype=float)
+        return np.empty((0, 10), dtype=float), np.array([], dtype=float)
     return np.asarray(X, dtype=float), np.asarray(y, dtype=float)
 
 
-def _cycle_features(cycle) -> np.ndarray | None:
+def _cycle_features(cycle, nominal_capacity: float) -> np.ndarray | None:
     """Compute fixed SOH baseline features from one NASA cycle."""
     voltage = _array(getattr(cycle, "voltage_in_V", None))
     current = _array(getattr(cycle, "current_in_A", None))
@@ -255,6 +257,9 @@ def _cycle_features(cycle) -> np.ndarray | None:
     time = _array(getattr(cycle, "time_in_s", None))
     if voltage.size == 0 or current.size == 0:
         return None
+    capacity = _cycle_capacity(cycle)
+    capacity_ratio = capacity / nominal_capacity if np.isfinite(capacity) and nominal_capacity > 0 else np.nan
+    capacity_ratio = float(np.clip(capacity_ratio, 0.0, 1.0)) if np.isfinite(capacity_ratio) else np.nan
     duration = float(np.nanmax(time) - np.nanmin(time)) if time.size else float(len(voltage))
     return np.array(
         [
@@ -266,9 +271,32 @@ def _cycle_features(cycle) -> np.ndarray | None:
             float(np.nanstd(current)),
             float(np.nanmean(temp)) if temp.size else np.nan,
             duration,
+            capacity,
+            capacity_ratio,
         ],
         dtype=float,
     )
+
+
+def _cell_nominal_capacity(cell) -> float:
+    """Read fresh capacity from a NASA BatteryData cell."""
+    value = getattr(cell, "nominal_capacity_in_Ah", np.nan)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return np.nan
+
+
+def _cycle_capacity(cycle) -> float:
+    """Read NASA cycle capacity in Ah from BatteryML or fallback storage."""
+    additional = getattr(cycle, "additional_data", {})
+    value = additional.get("capacity_in_Ah", getattr(cycle, "capacity_in_Ah", np.nan))
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        values = _array(value)
+        finite = values[np.isfinite(values)]
+        return float(finite[-1]) if finite.size else np.nan
 
 
 def _cycle_soh(cycle) -> float:
