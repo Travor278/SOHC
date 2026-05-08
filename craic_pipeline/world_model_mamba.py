@@ -275,15 +275,22 @@ def _load_or_build_file_shard(
     seq_len: int,
     stride: int,
     cache_dir: Path | None,
+    temperature_qc: bool = False,
 ) -> dict | None:
     """Load or build one cached NASA file shard for W2 tensors."""
     shard_path = _shard_path(cache_dir, subset, file_path) if cache_dir else None
     if shard_path is not None and shard_path.exists():
-        return torch.load(shard_path, map_location="cpu", weights_only=False)
+        cached = torch.load(shard_path, map_location="cpu", weights_only=False)
+        cached_qc = bool(cached.get("quality", {}).get("temperature_qc_applied", False))
+        if cached_qc == temperature_qc:
+            return cached
 
     V, I, T, t, cycle_id, ambient, capacity = loader(file_path)
     if not V.size:
         return None
+    quality = _temperature_quality(T)
+    if temperature_qc:
+        T, quality = _clean_temperature_series(T)
     df = _frame_from_arrays(V, I, T, t, cycle_id, ambient, capacity)
     soc = _soc_soft_labels(df, model=soc_model, window=soc_window, fast_when_unlabeled=subset == "randomized")
     soh = _soh_soft_labels(capacity)
@@ -308,6 +315,7 @@ def _load_or_build_file_shard(
         "subset": np.asarray([subset] * len(y), dtype=object),
         "cell": np.asarray([file_path.stem] * len(y), dtype=object),
         "traces": _series_to_traces(V, I, T, cycle_id, soc=soc, soh=soh, subset=subset, cell=file_path.stem),
+        "quality": quality,
     }
     if shard_path is not None:
         shard_path.parent.mkdir(parents=True, exist_ok=True)
@@ -319,6 +327,38 @@ def _shard_path(cache_dir: Path | None, subset: str, file_path: Path) -> Path:
     """Return a stable shard cache path for one NASA `.mat` file."""
     safe_parent = hashlib.sha1(str(file_path.parent).encode("utf-8")).hexdigest()[:8]
     return Path(cache_dir) / subset / f"{file_path.stem}_{safe_parent}.pt"
+
+
+def _temperature_quality(T: np.ndarray, *, low_C: float = -40.0, high_C: float = 120.0) -> dict:
+    """Summarize physically impossible temperature samples in a NASA trace."""
+    values = np.asarray(T, dtype=float)
+    bad = ~np.isfinite(values) | (values < low_C) | (values > high_C)
+    finite = values[np.isfinite(values)]
+    return {
+        "temperature_qc_applied": False,
+        "temperature_bounds_C": [float(low_C), float(high_C)],
+        "temperature_samples": int(values.size),
+        "temperature_bad_samples": int(bad.sum()),
+        "temperature_bad_ratio": float(bad.mean()) if values.size else 0.0,
+        "temperature_min_C": float(np.min(finite)) if finite.size else float("nan"),
+        "temperature_max_C": float(np.max(finite)) if finite.size else float("nan"),
+    }
+
+
+def _clean_temperature_series(T: np.ndarray, *, low_C: float = -40.0, high_C: float = 120.0) -> tuple[np.ndarray, dict]:
+    """Interpolate invalid NASA temperature samples and return QC metadata."""
+    values = np.asarray(T, dtype=float).copy()
+    quality = _temperature_quality(values, low_C=low_C, high_C=high_C)
+    bad = ~np.isfinite(values) | (values < low_C) | (values > high_C)
+    if bad.any():
+        valid = ~bad
+        if valid.any():
+            x = np.arange(values.size)
+            values[bad] = np.interp(x[bad], x[valid], values[valid])
+        else:
+            values[:] = 25.0
+    quality["temperature_qc_applied"] = True
+    return values, quality
 
 
 def train_world_model(
@@ -475,6 +515,8 @@ def evaluate_randomized_directory(
     rollout_stride: int = 256,
     max_files: int | None = None,
     device: torch.device | str | None = None,
+    temperature_qc: bool = False,
+    exclude_bad_temp_ratio: float | None = None,
 ) -> dict:
     """Evaluate W2 on every NASA Randomized `.mat` file using cached shards.
 
@@ -489,6 +531,9 @@ def evaluate_randomized_directory(
         rollout_stride: Trace stride used for rollout sampling.
         max_files: Optional debug cap; `None` means all `.mat` files.
         device: Torch device.
+        temperature_qc: Interpolate physically impossible temperature samples.
+        exclude_bad_temp_ratio: Optional bad-temperature ratio threshold used to
+            exclude corrupted cells from the main metric after recording them.
 
     Returns:
         JSON-serializable metrics covering all evaluated Randomized files.
@@ -512,9 +557,23 @@ def evaluate_randomized_directory(
             seq_len=seq_len,
             stride=stride,
             cache_dir=cache_dir,
+            temperature_qc=temperature_qc,
         )
         if shard is None:
             file_rows.append({"file": file_path.stem, "status": "empty"})
+            continue
+        quality = dict(shard.get("quality", {}))
+        bad_ratio = float(quality.get("temperature_bad_ratio", 0.0))
+        if exclude_bad_temp_ratio is not None and bad_ratio > exclude_bad_temp_ratio:
+            file_rows.append(
+                {
+                    "file": file_path.stem,
+                    "status": "excluded_temperature_qc",
+                    "windows": int(len(shard["y"])),
+                    "traces": int(len(shard.get("traces", []))),
+                    **quality,
+                }
+            )
             continue
         file_one_step = _one_step_error_accumulator(
             model,
@@ -543,6 +602,7 @@ def evaluate_randomized_directory(
                 * 1000.0,
                 "rollout_errors": int(len(file_rollout)),
                 "rollout_voltage_mae_mV": float(np.mean(file_rollout)) if file_rollout else np.nan,
+                **quality,
             }
         )
     one_count = int(one_step["count"])
@@ -551,9 +611,14 @@ def evaluate_randomized_directory(
         "subset": "randomized_full",
         "files_total": int(len(files)),
         "files_evaluated": int(sum(row["status"] == "ok" for row in file_rows)),
+        "files_excluded": int(sum(str(row["status"]).startswith("excluded") for row in file_rows)),
         "seq_len": int(seq_len),
         "stride": int(stride),
         "batch_size": int(batch_size),
+        "temperature_qc": {
+            "enabled": bool(temperature_qc),
+            "exclude_bad_temp_ratio": None if exclude_bad_temp_ratio is None else float(exclude_bad_temp_ratio),
+        },
         "one_step_samples": one_count,
         "one_step": {
             "soc_mae_percent": _safe_div(one_step["soc_abs_sum"], one_count) * 100.0,
@@ -979,6 +1044,13 @@ def main() -> None:
     parser.add_argument("--randomized-report-out", type=Path, default=Path("outputs/world_model_randomized_full_eval.metrics.json"))
     parser.add_argument("--randomized-eval-stride", type=int, default=64)
     parser.add_argument("--randomized-rollout-stride", type=int, default=256)
+    parser.add_argument("--randomized-temperature-qc", action="store_true", help="Interpolate impossible Randomized temperature samples")
+    parser.add_argument(
+        "--randomized-exclude-bad-temp-ratio",
+        type=float,
+        default=None,
+        help="Exclude Randomized cells whose invalid-temperature ratio exceeds this threshold",
+    )
     parser.add_argument("--gru-fallback", action="store_true", help="Force GRU when mamba-ssm is unavailable")
     parser.add_argument("--build-only", action="store_true", help="Only build and save W2 train tensors")
     args = parser.parse_args()
@@ -996,6 +1068,8 @@ def main() -> None:
             rollout_horizon=args.rollout_horizon,
             rollout_stride=args.randomized_rollout_stride,
             max_files=args.limit_randomized_files,
+            temperature_qc=args.randomized_temperature_qc,
+            exclude_bad_temp_ratio=args.randomized_exclude_bad_temp_ratio,
         )
         args.randomized_report_out.parent.mkdir(parents=True, exist_ok=True)
         args.randomized_report_out.write_text(json.dumps(report, indent=2), encoding="utf-8")

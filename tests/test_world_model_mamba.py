@@ -188,3 +188,48 @@ def test_evaluate_randomized_directory_streams_file_shards(tmp_path):
     assert report["one_step_samples"] > 0
     assert np.isfinite(report["one_step"]["voltage_mae_mV"])
     assert list(cache.rglob("*.pt"))
+
+
+def test_evaluate_randomized_directory_applies_temperature_qc(tmp_path):
+    """Randomized evaluator can clean and exclude corrupted temperature traces."""
+    randomized = tmp_path / "Randomized"
+    cache = tmp_path / "cache"
+    randomized.mkdir()
+    valid_cycle = {
+        "data": {
+            "Voltage_measured": np.linspace(3.8, 3.9, 14),
+            "Current_measured": np.full(14, 1.0),
+            "Temperature_measured": np.linspace(25.0, 25.2, 14),
+            "Time": np.arange(14, dtype=float),
+        }
+    }
+    bad_cycle = {
+        "data": {
+            "Voltage_measured": np.linspace(3.8, 3.9, 14),
+            "Current_measured": np.full(14, 1.0),
+            "Temperature_measured": np.full(14, -4094.0),
+            "Time": np.arange(14, dtype=float),
+        }
+    }
+    savemat(randomized / "RW1.mat", {"RW1": {"cycle": np.array([valid_cycle], dtype=object)}})
+    savemat(randomized / "RW2.mat", {"RW2": {"cycle": np.array([bad_cycle], dtype=object)}})
+    model = BatteryWorldModel(WorldModelConfig(hidden_dim=8, n_layers=1, seq_len=4, use_mamba=False))
+
+    report = evaluate_randomized_directory(
+        model,
+        randomized,
+        cache_dir=cache,
+        seq_len=4,
+        stride=2,
+        rollout_horizon=2,
+        rollout_stride=3,
+        device="cpu",
+        temperature_qc=True,
+        exclude_bad_temp_ratio=0.5,
+    )
+
+    statuses = {row["file"]: row["status"] for row in report["files"]}
+    assert report["files_evaluated"] == 1
+    assert report["files_excluded"] == 1
+    assert statuses["RW2"] == "excluded_temperature_qc"
+    assert report["temperature_qc"]["enabled"] is True

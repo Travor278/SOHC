@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 
-METRICS = Path("outputs/world_model_randomized_full_stride64.metrics.json")
+RAW_METRICS = Path("outputs/world_model_randomized_full_stride64.metrics.json")
+QC_METRICS = Path("outputs/world_model_randomized_full_stride64_tempqc.metrics.json")
 OUT_DIR = Path("paper_figures")
 
 
@@ -50,40 +51,58 @@ def weighted_mean(rows: pd.DataFrame, value: str, weight: str) -> float:
     return float(np.average(rows[value].to_numpy(float), weights=rows[weight].to_numpy(float)))
 
 
-def build_summary(rows: pd.DataFrame) -> pd.DataFrame:
+def build_summary(raw: dict, qc: dict | None, rows: pd.DataFrame) -> pd.DataFrame:
     """Create full and outlier-excluded metric rows for the figure."""
-    normal = rows[~rows["file"].isin(["RW2", "RW3"])].copy()
-    return pd.DataFrame(
-        [
-            {
-                "scope": "Full 28 RW",
-                "files": len(rows),
-                "one_step_mV": weighted_mean(rows, "one_step_voltage_mae_mV", "windows"),
-                "rollout_mV": weighted_mean(rows, "rollout_voltage_mae_mV", "rollout_errors"),
-            },
+    records = [
+        {
+            "scope": "Raw stress",
+            "files": raw["files_evaluated"],
+            "one_step_mV": raw["one_step"]["voltage_mae_mV"],
+            "rollout_mV": raw["rollout"]["voltage_mae_mV"],
+        }
+    ]
+    if qc is None:
+        normal = rows[~rows["file"].isin(["RW2", "RW3"])].copy()
+        records.append(
             {
                 "scope": "Without RW2/RW3",
                 "files": len(normal),
                 "one_step_mV": weighted_mean(normal, "one_step_voltage_mae_mV", "windows"),
                 "rollout_mV": weighted_mean(normal, "rollout_voltage_mae_mV", "rollout_errors"),
-            },
-        ]
-    )
+            }
+        )
+    else:
+        records.append(
+            {
+                "scope": "QC main",
+                "files": qc["files_evaluated"],
+                "one_step_mV": qc["one_step"]["voltage_mae_mV"],
+                "rollout_mV": qc["rollout"]["voltage_mae_mV"],
+            }
+        )
+    return pd.DataFrame(records)
 
 
 def main() -> None:
     """Draw a two-panel Randomized full-rollout diagnostic figure."""
     set_style()
-    data = json.loads(METRICS.read_text(encoding="utf-8"))
+    data = json.loads(RAW_METRICS.read_text(encoding="utf-8"))
+    qc = json.loads(QC_METRICS.read_text(encoding="utf-8")) if QC_METRICS.exists() else None
     rows = pd.DataFrame(data["files"]).sort_values("file", key=lambda col: col.map(rw_sort_key))
-    summary = build_summary(rows)
+    if qc is not None:
+        qc_rows = pd.DataFrame(qc["files"])[["file", "status", "temperature_bad_ratio"]]
+        rows = rows.merge(qc_rows, on="file", how="left", suffixes=("", "_qc"))
+    else:
+        rows["status_qc"] = np.where(rows["file"].isin(["RW2", "RW3"]), "excluded_temperature_qc", "ok")
+        rows["temperature_bad_ratio"] = np.nan
+    summary = build_summary(data, qc, rows)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     rows.to_csv(OUT_DIR / "fig19_randomized_rollout_recheck.csv", index=False)
 
     fig, axes = plt.subplots(1, 2, figsize=(7.4, 3.3), gridspec_kw={"width_ratios": [2.15, 1.0]})
     ax = axes[0]
-    colors = np.where(rows["file"].isin(["RW2", "RW3"]), "#B84A3A", "#2A7F62")
+    colors = np.where(rows["status_qc"].eq("excluded_temperature_qc"), "#B84A3A", "#2A7F62")
     x = np.arange(len(rows))
     ax.bar(x, rows["rollout_voltage_mae_mV"], color=colors, width=0.72, edgecolor="#303030", linewidth=0.25)
     ax.axhline(50, color="#303030", linestyle=":", lw=0.9)
@@ -92,12 +111,12 @@ def main() -> None:
     ax.set_xticks(x)
     ax.set_xticklabels(rows["file"], rotation=90)
     ax.set_ylabel("20-step rollout V MAE (mV, log)")
-    ax.set_title("Per-file dynamic-load rollout error")
+    ax.set_title("Raw per-file rollout error and QC exclusions")
     ax.grid(True, axis="y", which="both")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.text(len(rows) - 0.2, 53, "50 mV ref.", ha="right", va="bottom", fontsize=7, color="#303030")
-    for file_id in ["RW2", "RW3"]:
+    for file_id in rows.loc[rows["status_qc"].eq("excluded_temperature_qc"), "file"].tolist():
         idx = int(rows.index[rows["file"] == file_id][0])
         x_pos = int(np.where(rows["file"].to_numpy() == file_id)[0][0])
         y = float(rows.loc[idx, "rollout_voltage_mae_mV"])
@@ -111,7 +130,7 @@ def main() -> None:
     ax.set_xticks(x)
     ax.set_xticklabels([f"{r.scope}\n({int(r.files)} files)" for r in summary.itertuples()], linespacing=1.1)
     ax.set_ylabel("Weighted V MAE (mV)")
-    ax.set_title("Full vs robust summary")
+    ax.set_title("Raw vs QC summary")
     ax.grid(True, axis="y")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -120,11 +139,11 @@ def main() -> None:
         ax.bar_label(container, fmt="%.1f", padding=2, fontsize=7)
     ax.set_ylim(0, max(summary["rollout_mV"]) * 1.22)
 
-    fig.suptitle("NASA Randomized full recheck: strict stride=64, 28/28 RW files", fontsize=9.5, weight="bold", y=0.985)
+    fig.suptitle("NASA Randomized recheck: raw stress-test vs temperature-QC main result", fontsize=9.5, weight="bold", y=0.985)
     fig.text(
         0.5,
         0.01,
-        "RW2/RW3 dominate the full 20-step metric; the result is reported as a dynamic-load stress boundary, not a pass metric.",
+        "Cells with invalid-temperature ratio > 50% are excluded from the main metric; the raw 28-file result is retained as stress-test evidence.",
         ha="center",
         fontsize=7.5,
     )

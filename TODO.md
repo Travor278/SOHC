@@ -72,7 +72,8 @@
 - [ ] 验证目标：
   - [x] 1 步 V 预测 MAE < 5 mV（B0005-B0018 holdout）
   - [x] 20 步漂移 < 50 mV
-  - [ ] **Randomized 全量动态负载外推 MAE < 10 mV** ← 关键；6-file 子集曾达标，但 28-file strict full 未达标
+  - [x] **Randomized QC full 1-step V MAE < 10 mV**：26/28 文件，`2.17 mV`
+  - [ ] Randomized QC full 20-step V MAE < 10 mV：当前 `24.29 mV`
 - [x] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
 - [x] 保存 `outputs/world_model.pt`
 
@@ -152,6 +153,7 @@
 - 2026-05-08 W2 Randomized full 评估：`stride=64` 严格全量评估因耗时过长已手动停止；缓存完成 25/28 个 RW 文件（缺 `RW9/RW11/RW12`），缓存体积约 2.5 GB。25 个文件足够作为进入包级原型的动态负载覆盖基线；论文最终若写“全量 Randomized”需用更稀疏 `stride=512/1024` 补完整 28 文件报告。
 - 2026-05-08 W2 Randomized missing3：为 `data.step` 结构新增定向 fast-path，避免把 10 万级 MATLAB step 全量递归转成 Python 对象；并把按 cycle 分组的 O(N^2) `np.where` 扫描改成 contiguous slices。`RW9/RW11/RW12` 曾先按 `stride=1024` 生成补充缓存用于快速覆盖；该临时口径已被下一条统一 `stride=64` strict full 复核覆盖。
 - 2026-05-08 W2 Randomized strict full：bug 修复后已把 `RW9/RW11/RW12` 也按严格 `stride=64` 补进 `outputs/cache/world_model_randomized_full_stride64/`，28/28 文件缓存总量约 4.16 GB。全量复核输出 `outputs/world_model_randomized_full_stride64.metrics.json`：one-step V MAE `10.07 mV`，20-step rollout V MAE `103.43 mV`、p95 `763.48 mV`。`RW2/RW3` 是主要异常源；去除二者后 weighted one-step/rollout V MAE 为 `2.26 mV` / `25.63 mV`。结论：全量 Randomized 应写作动态负载压力边界，不写作 `<10 mV` 达标。
+- 2026-05-08 W2 Randomized temperature QC：联网核查发现 NASA Randomized 本身按不同工况组组织，且文献曾因温度测量损坏排除 `RW3`；本地扫描显示 `RW2/RW3/RW18` 分别有 `90.55%/73.38%/16.73%` 温度样本为约 `-4094 deg C` 的物理不可能值。新增 `--randomized-temperature-qc` 与 `--randomized-exclude-bad-temp-ratio 0.5` 后，QC main result 保留 26/28 个 RW 文件，剔除 `RW2/RW3`，输出 `outputs/world_model_randomized_full_stride64_tempqc.metrics.json`：one-step V MAE `2.17 mV`，20-step rollout V MAE `24.29 mV`、p95 `92.71 mV`。
 - 2026-05-08 W2 ECM：`cross_check_against_matlab()` 使用 `savemat_2order.mat` 的 `I/SOC/Ts` 和独立二阶 RC 参考公式做 Python 对照，最大误差 < 1 mV；1000 个随机动作投影后端电压均满足 `V_min <= V_pred <= V_max`。
 - 2026-05-08 W3 动作符号：NASA/W2 张量里正电流对应充电、负电流对应放电；MATLAB ECM 参数口径更接近正电流放电。因此 `BatteryChargingEnv` 对 RL/世界模型暴露正充电电流 `[0, I_max]`，传给 ECM safety layer 时内部反号，并将世界模型电压输出硬裁剪到 `[V_min, V_max]` 作为 L3 安全约束。
 - 2026-05-08 W3 WSL 依赖：`Ubuntu2404` 的 `~/.venvs/sohc-craic-py312` 已补装 `gymnasium==1.2.3`、`stable-baselines3==2.8.0`、`tensorboard==2.20.0`。Windows `.venv_craic` 可跑 W3 单测，但 Mamba checkpoint 加载/训练仍优先走 WSL。

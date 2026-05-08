@@ -282,7 +282,8 @@ W3 环境每一步执行：
 | 世界模型 metrics | `outputs/world_model.metrics.json` | 1-step V MAE 等指标 |
 | Randomized 子集评估 | `outputs/world_model_randomized_subset_eval.metrics.json` | 动态负载子集外推评估 |
 | Randomized 全量复核 | `outputs/world_model_randomized_full_stride64.metrics.json` | 28/28 RW，strict stride=64，20-step rollout 压力边界 |
-| Randomized 复核图 | `paper_figures/fig19_randomized_rollout_recheck.png` | 逐文件误差和 RW2/RW3 异常贡献 |
+| Randomized QC 复核 | `outputs/world_model_randomized_full_stride64_tempqc.metrics.json` | 温度 QC 后 26/28 RW 主指标 |
+| Randomized 复核图 | `paper_figures/fig19_randomized_rollout_recheck.png` | raw stress-test 与 QC main result 对比 |
 | ECM 参数来源 | `MATLAB滤波算法代码——云储实时数据/.../savemat_2order.mat` | legacy MATLAB STA/MIUKF 参数源 |
 
 ### W3 产物
@@ -333,10 +334,14 @@ W3 环境每一步执行：
   - sampled 20-step rollout V MAE：约 `7.71 mV`
 - Randomized strict full recheck：
   - 覆盖 `28/28` 个 RW 文件，统一 `stride=64`，20-step rollout stride `256`。
-  - one-step V MAE：`10.07 mV`
-  - 20-step rollout V MAE / p95：`103.43 mV` / `763.48 mV`
-  - 去除 `RW2/RW3` 后 weighted one-step/rollout V MAE：`2.26 mV` / `25.63 mV`
-  - 结论：全量 Randomized 是当前世界模型的动态负载压力边界，不能写成 `<10 mV` 达标。
+  - raw stress-test one-step V MAE：`10.07 mV`
+  - raw stress-test 20-step rollout V MAE / p95：`103.43 mV` / `763.48 mV`
+- Randomized temperature-QC main result：
+  - QC 规则：`[-40, 120] deg C` 外温度插值修复；坏温度比例 `>50%` 的 cell 剔除。
+  - 剔除：`RW2`（坏温度 `90.55%`）、`RW3`（坏温度 `73.38%`）。
+  - 保留 `26/28` 个 RW 文件，one-step V MAE：`2.17 mV`
+  - 20-step rollout V MAE / p95：`24.29 mV` / `92.71 mV`
+  - 结论：正文主指标采用 QC main result；raw 28-file 结果保留为压力测试和数据质量边界。
 
 ### SAC / W4 核心对比
 
@@ -485,10 +490,10 @@ aging = 120
    - 当前 best 约 `3.48%`。
    - 论文图像可用，但若要严苛指标，需要继续做标签清洗或改模型。
 
-2. Randomized 全量动态负载是当前 W2 的主要短板。
-   - 严格 `stride=64` 已缓存并评估 28/28 个 RW 文件。
-   - 全量 20-step rollout V MAE 为 `103.43 mV`，主要由 `RW2/RW3` 拉高。
-   - 去除 `RW2/RW3` 后为 `25.63 mV`，仍应作为压力边界而非最终达标指标。
+2. Randomized 高温/偏置电流组仍是当前 W2 的主要外推短板。
+   - 温度 QC 后主指标已稳定：26/28 文件 one-step `2.17 mV`，20-step `24.29 mV`。
+   - 剩余 20-step 高误差主要集中在 `RW21-RW28` 等高温/偏置电流分布组。
+   - 若要把 20-step 动态负载压到 `<10 mV`，需要加入 Randomized fine-tune 或按工况分组训练。
 
 3. W4 的 paired-vs-CCCV 口径需要在论文/答辩中说明。
    - 因为随机初始 SOC 下，CC-CV/MFCC 在固定 horizon 内并非每次都能到 80%。
@@ -516,8 +521,8 @@ aging = 120
 ### A. Randomized 动态负载指标复核
 
 1. 已统一 `SYSTEM_STATUS.md` / `TODO.md` / metrics JSON 中 Randomized 20-step rollout 口径。
-2. 已完成统一 `stride=64` 的 28/28 文件复核。
-3. 已输出 `paper_figures/fig19_randomized_rollout_recheck.png`。正文建议写成“动态负载压力测试暴露 RW2/RW3 域差异”，不写成 Randomized 全量达标。
+2. 已完成统一 `stride=64` 的 28/28 raw stress-test 和温度 QC main result。
+3. 已输出 `paper_figures/fig19_randomized_rollout_recheck.png`。正文建议写成“温度 QC 后 26-file main result + raw 28-file stress-test”。
 
 ### B. 继续加强 SOH Mamba-head
 
@@ -560,11 +565,11 @@ aging = 120
 最建议现在做：
 
 ```text
-针对 RW2/RW3 做 Randomized fine-tune，并加强 BatteryML/Mamba-head SOH 对比。
+针对 Randomized 高温/偏置电流组做 fine-tune，并加强 BatteryML/Mamba-head SOH 对比。
 ```
 
 原因：
 
 - 主链路、包级 UPC、Zenodo 展示图都已具备。
-- Randomized 指标口径已统一；新的问题是 28-file strict full 暴露 `RW2/RW3` 域差异。
+- Randomized 指标口径已统一；新的问题是 QC 后 20-step 在高温/偏置电流组仍有约 70 mV 文件级误差。
 - Mamba-head SOH 轻量版已补齐，但仍可继续优化到更像正式 BatteryML trainer 的实验。
