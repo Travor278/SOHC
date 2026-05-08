@@ -706,9 +706,8 @@ def _series_to_windows(
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Convert continuous NASA series into per-cycle world-model windows."""
     outputs: list[tuple[np.ndarray, np.ndarray]] = []
-    for cid in np.unique(cycle_id):
-        idx = np.where(cycle_id == cid)[0]
-        if idx.size <= seq_len:
+    for idx in _iter_contiguous_cycles(cycle_id):
+        if idx.stop - idx.start <= seq_len:
             continue
         soc_cycle = soc[idx] if soc is not None else _approx_soc(I[idx], capacity[idx])
         soh_cycle = soh[idx] if soh is not None else _approx_soh(capacity[idx])
@@ -736,9 +735,8 @@ def _series_to_traces(
 ) -> list[dict]:
     """Convert per-cycle NASA series into continuous W2 rollout traces."""
     traces = []
-    for cid in np.unique(cycle_id):
-        idx = np.where(cycle_id == cid)[0]
-        if idx.size < 2:
+    for idx in _iter_contiguous_cycles(cycle_id):
+        if idx.stop - idx.start < 2:
             continue
         features = np.column_stack([soc[idx], soh[idx], V[idx], I[idx], T[idx], I[idx]])
         finite = np.isfinite(features).all(axis=1)
@@ -748,11 +746,22 @@ def _series_to_traces(
             {
                 "subset": subset,
                 "cell": cell,
-                "cycle_id": float(cid),
+                "cycle_id": float(cycle_id[idx.start]),
                 "features": features[finite].astype(np.float32),
             }
         )
     return traces
+
+
+def _iter_contiguous_cycles(cycle_id: np.ndarray):
+    """Yield index slices for ordered per-cycle NASA arrays."""
+    if cycle_id.size == 0:
+        return
+    boundaries = np.flatnonzero(np.diff(cycle_id) != 0) + 1
+    starts = np.concatenate(([0], boundaries))
+    stops = np.concatenate((boundaries, [cycle_id.size]))
+    for start, stop in zip(starts, stops):
+        yield slice(int(start), int(stop))
 
 
 def _window_one_cycle(features: np.ndarray, *, seq_len: int, stride: int) -> tuple[np.ndarray, np.ndarray]:

@@ -150,6 +150,7 @@
 - 2026-05-08 W2 rollout：重新生成带 `traces` 的 `outputs/world_model_train_data.pt` 后，B0018 holdout 20-step open-loop voltage drift MAE 为 8.04 mV、p95 为 22.03 mV，满足 `<50 mV`。
 - 2026-05-08 W2 Randomized：新增 `--cache-dir` 分文件 shard 缓存，并按文件大小优先解析 Randomized。6 个最小 Randomized `.mat` shard 已缓存；在该动态负载子集上，PCoE 训练好的 residual Mamba 1-step V MAE 为 2.39 mV，20-step 采样 rollout V MAE 为 7.71 mV，满足 Randomized 子集 `<10 mV`。注意：这不是 28 个 Randomized 文件的全量验收；全量仍建议后台长跑或继续增量缓存。
 - 2026-05-08 W2 Randomized full 评估：`stride=64` 严格全量评估因耗时过长已手动停止；缓存完成 25/28 个 RW 文件（缺 `RW9/RW11/RW12`），缓存体积约 2.5 GB。25 个文件足够作为进入包级原型的动态负载覆盖基线；论文最终若写“全量 Randomized”需用更稀疏 `stride=512/1024` 补完整 28 文件报告。
+- 2026-05-08 W2 Randomized missing3：为 `data.step` 结构新增定向 fast-path，避免把 10 万级 MATLAB step 全量递归转成 Python 对象；并把按 cycle 分组的 O(N^2) `np.where` 扫描改成 contiguous slices。`RW9/RW11/RW12` 已按 `stride=1024` 生成补充缓存，合计约 0.96 GB；与严格 `stride=64` 的 25 个缓存合计覆盖 28/28 个 RW 文件。注意：后三个是稀疏缓存，不等同于 28 文件同一 stride 的正式 metrics。
 - 2026-05-08 W2 ECM：`cross_check_against_matlab()` 使用 `savemat_2order.mat` 的 `I/SOC/Ts` 和独立二阶 RC 参考公式做 Python 对照，最大误差 < 1 mV；1000 个随机动作投影后端电压均满足 `V_min <= V_pred <= V_max`。
 - 2026-05-08 W3 动作符号：NASA/W2 张量里正电流对应充电、负电流对应放电；MATLAB ECM 参数口径更接近正电流放电。因此 `BatteryChargingEnv` 对 RL/世界模型暴露正充电电流 `[0, I_max]`，传给 ECM safety layer 时内部反号，并将世界模型电压输出硬裁剪到 `[V_min, V_max]` 作为 L3 安全约束。
 - 2026-05-08 W3 WSL 依赖：`Ubuntu2404` 的 `~/.venvs/sohc-craic-py312` 已补装 `gymnasium==1.2.3`、`stable-baselines3==2.8.0`、`tensorboard==2.20.0`。Windows `.venv_craic` 可跑 W3 单测，但 Mamba checkpoint 加载/训练仍优先走 WSL。

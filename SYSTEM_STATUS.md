@@ -329,7 +329,11 @@ W3 环境每一步执行：
 - Randomized 子集：
   - 1-step V MAE：约 `2.39 mV`
   - sampled 20-step rollout V MAE：约 `7.71 mV`
-- 注意：Randomized 是 6 个最小文件子集，不是 28 个 `.mat` 全量。
+- 注意：上述指标来自 6 个最小文件子集，不是 28 个 `.mat` 全量。
+- Randomized 缓存覆盖：
+  - 严格 `stride=64` 已缓存 `25/28` 个 RW 文件。
+  - 缺失的 `RW9/RW11/RW12` 已用 `stride=1024` 补充缓存。
+  - 当前可用于后续复核的是“25 个严格缓存 + 3 个稀疏缓存”的组合，尚不是统一 stride 的正式全量 metrics。
 
 ### SAC / W4 核心对比
 
@@ -478,10 +482,10 @@ aging = 120
    - 当前 best 约 `3.48%`。
    - 论文图像可用，但若要严苛指标，需要继续做标签清洗或改模型。
 
-2. Randomized 全量评估尚未完成。
-   - 当前严格 `stride=64` 已缓存 25/28 个 RW 文件，缺 `RW9/RW11/RW12`。
-   - 25 个文件足够推进包级原型。
-   - 论文最终若写“全量 Randomized”，建议用 `stride=512/1024` 跑完整 28 文件报告。
+2. Randomized 全量指标尚未统一定稿。
+   - 当前严格 `stride=64` 已缓存 25/28 个 RW 文件。
+   - `RW9/RW11/RW12` 已用 `stride=1024` 补充缓存，合计覆盖 28/28 个 RW 文件。
+   - 论文最终若写“全量 Randomized”，需要明确口径：混合缓存复核，或重新用统一 `stride=1024` 跑完整 28 文件 metrics。
 
 3. W4 的 paired-vs-CCCV 口径需要在论文/答辩中说明。
    - 因为随机初始 SOC 下，CC-CV/MFCC 在固定 horizon 内并非每次都能到 80%。
@@ -509,7 +513,7 @@ aging = 120
 ### A. Randomized 动态负载指标复核
 
 1. 统一 `SYSTEM_STATUS.md` / `TODO.md` / metrics JSON 中 Randomized 20-step rollout 口径。
-2. 建议用 `stride=512/1024` 补齐 28 个 RW 文件，降低运行时长。
+2. `RW9/RW11/RW12` 已用 `stride=1024` 补齐缓存；下一步是用缓存复核指标，不再重新解析 `.mat`。
 3. 输出 `paper_figures/fig18_randomized_rollout_recheck.png`，再决定正文是否写 20-step 动态负载指标。
 
 ### B. 继续加强 SOH Mamba-head

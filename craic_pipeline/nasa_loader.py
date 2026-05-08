@@ -117,6 +117,10 @@ def _mat_files(path: Path) -> list[Path]:
 def _load_one_file(path: Path, *, subset: str, cycle_offset: int) -> LoaderOutput:
     """Parse one NASA `.mat` file into normalized cycle arrays."""
     raw = loadmat(path, squeeze_me=True, struct_as_record=False)
+    if subset == "randomized":
+        fast = _parse_randomized_step_payload(raw, cycle_offset=cycle_offset)
+        if fast is not None:
+            return fast
     payload = _select_payload(raw, path)
     cycles = _extract_cycles(payload)
     if not cycles:
@@ -230,8 +234,7 @@ def _filter_current_jumps(arrays: LoaderOutput, *, threshold_A: float) -> Loader
     kept_indices: list[np.ndarray] = []
     new_cycle_ids: list[np.ndarray] = []
     next_cycle = 0
-    for cid in np.unique(cycle_id):
-        idx = np.where(cycle_id == cid)[0]
+    for idx in _contiguous_cycle_indices(cycle_id):
         if idx.size <= 1:
             continue
         jumps = np.where(np.abs(np.diff(I[idx])) > threshold_A)[0] + 1
@@ -249,6 +252,112 @@ def _filter_current_jumps(arrays: LoaderOutput, *, threshold_A: float) -> Loader
     filtered = [arr[keep] for arr in (V, I, T, t, cycle_id, ambient, capacity)]
     filtered[4] = np.concatenate(new_cycle_ids)
     return tuple(filtered)  # type: ignore[return-value]
+
+
+def _parse_randomized_step_payload(raw: dict, *, cycle_offset: int) -> LoaderOutput | None:
+    """Parse NASA Randomized `data.step` files without full struct recursion."""
+    candidates = {k: v for k, v in raw.items() if k not in _META_KEYS}
+    payload = next(iter(candidates.values())) if len(candidates) == 1 else None
+    if payload is None:
+        for value in candidates.values():
+            if _raw_field(value, "step", default=None) is not None:
+                payload = value
+                break
+    steps = _raw_field(payload, "step", default=None)
+    if steps is None:
+        return None
+
+    records: list[LoaderOutput] = []
+    for local_id, step in enumerate(np.asarray(steps, dtype=object).reshape(-1)):
+        voltage = _raw_series(step, _VOLTAGE_KEYS)
+        current = _raw_series(step, _CURRENT_KEYS)
+        if voltage.size == 0 or current.size == 0:
+            continue
+        n = min(voltage.size, current.size)
+        temp = _raw_series(step, _TEMP_KEYS)
+        if temp.size == 0:
+            temp = np.full(n, np.nan, dtype=float)
+        time = _raw_series(step, ("time", "Time", "relativeTime", "relative_time"))
+        if time.size == 0:
+            time = np.arange(n, dtype=float)
+        n = min(n, temp.size, time.size)
+        if n == 0:
+            continue
+        capacity = _capacity_array(step, step, n)
+        ambient = _scalar(_raw_field(step, *_AMBIENT_KEYS, default=np.nan), np.nan)
+        records.append(
+            (
+                voltage[:n],
+                current[:n],
+                temp[:n],
+                time[:n],
+                np.full(n, float(cycle_offset + local_id), dtype=float),
+                np.full(n, ambient, dtype=float),
+                capacity,
+            )
+        )
+    return _concat_outputs(records)
+
+
+def _raw_field(obj, *names: str, default=None):
+    """Read one MATLAB struct field without recursively converting siblings."""
+    obj = _unwrap_mat_scalar(obj)
+    if obj is None:
+        return default
+    if hasattr(obj, "_fieldnames"):
+        fields = {name.lower(): name for name in obj._fieldnames}
+        for name in names:
+            match = fields.get(name.lower())
+            if match is not None:
+                return getattr(obj, match)
+        return default
+    if isinstance(obj, dict):
+        fields = {key.lower(): key for key in obj}
+        for name in names:
+            match = fields.get(name.lower())
+            if match is not None:
+                return obj[match]
+        return default
+    if isinstance(obj, np.ndarray) and obj.dtype.names:
+        fields = {name.lower(): name for name in obj.dtype.names}
+        for name in names:
+            match = fields.get(name.lower())
+            if match is not None:
+                return obj[match]
+    if isinstance(obj, np.void) and obj.dtype.names:
+        fields = {name.lower(): name for name in obj.dtype.names}
+        for name in names:
+            match = fields.get(name.lower())
+            if match is not None:
+                return obj[match]
+    return default
+
+
+def _raw_series(obj, names: Iterable[str]) -> np.ndarray:
+    """Return a numeric vector from one MATLAB step field."""
+    for name in names:
+        values = _as_numeric_1d(_raw_field(obj, name, default=None))
+        if values.size:
+            return values
+    return np.array([], dtype=float)
+
+
+def _unwrap_mat_scalar(obj):
+    """Unwrap scalar MATLAB object arrays without walking large arrays."""
+    while isinstance(obj, np.ndarray) and obj.ndim == 0:
+        obj = obj.item()
+    return obj
+
+
+def _contiguous_cycle_indices(cycle_id: np.ndarray) -> Iterable[np.ndarray]:
+    """Yield contiguous index ranges for already ordered NASA cycle ids."""
+    if cycle_id.size == 0:
+        return
+    boundaries = np.flatnonzero(np.diff(cycle_id) != 0) + 1
+    starts = np.concatenate(([0], boundaries))
+    stops = np.concatenate((boundaries, [cycle_id.size]))
+    for start, stop in zip(starts, stops):
+        yield np.arange(start, stop)
 
 
 def _concat_outputs(outputs: Sequence[LoaderOutput]) -> LoaderOutput:
