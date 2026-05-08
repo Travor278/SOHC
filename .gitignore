@@ -23,6 +23,8 @@ Thumbs.db
 data/lg_hg2/**
 data/nasa_pcoe/**
 data/zenodo_6985321/**
+data/pack_wltp_upc/**
+data/battgp_field/**
 !data/**/.gitkeep
 !data/**/README.md
 !data/HUST data/**

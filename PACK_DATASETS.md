@@ -141,3 +141,21 @@ Qtzl_Cycle_010_WLTP_partial_data.parquet
 2. 工程接口：保留 Python `pack_balance.py` 的 `6S1P` / `30S1P` simulator。
 3. Simulink：降级为可选演示，不承担可信定量指标。
 4. field-data 补充：视时间下载 BattGP，做弱单体/电压 spread 定性图。
+
+## 当前本地状态
+
+- `scripts/download_upc_pack.py` 已实现 Dataverse API 下载、断点跳过、MD5 校验。
+- UPC DATA2395 已在本机下载完成：`412/412` 文件，约 1.32 GB。
+- `craic_pipeline/pack_dataset_upc.py` 已实现：
+  - 单个 Parquet cycle 加载
+  - 目录流式 summary
+  - `12S3P` 原生数组输出
+  - 36-cell flatten 输出
+  - Simulink 友好宽 CSV 导出
+- 全量 summary 输出：`outputs/upc_pack_summary_full.csv`
+  - 410 Parquet cycles
+  - 295 WLTP / 115 Capacity_check
+  - 3 个 cycle 含 Balancing semicycle
+  - 平均 cell voltage spread 约 69.34 mV
+  - 最大 cell voltage spread 约 1312 mV
+- 注意：部分温度列存在约 650°C 级占位/异常值；分析时使用 `temperature_median_valid_C`、`temperature_p95_valid_C` 和 `temperature_valid_fraction`，不直接使用 raw max 做热安全结论。

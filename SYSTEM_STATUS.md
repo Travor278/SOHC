@@ -71,6 +71,7 @@ W5: 多单体 / 包级扩展
 | `craic_pipeline/train_sac.py` | 已实现 | SAC 训练入口，支持 reward sweep/checkpoint |
 | `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估与画图 |
 | `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 均衡、包级指标与画图 |
+| `craic_pipeline/pack_dataset_upc.py` | 已实现 | UPC 36-cell pack Parquet 加载、summary、Simulink CSV 导出 |
 
 ## 3.1 W1 主要算法
 
@@ -389,6 +390,20 @@ W3 环境每一步执行：
 
 ## 6. 当前重要工程决策
 
+### 包级可信数据
+
+- 仓库内 `batterpack.slx` / `buck_boost_balance.slx` 来源未知，降级为可选接口演示。
+- W5 包级定量验证改用 UPC 36-cell pack WLTP+CC-CV 数据集。
+- 本地 `data/pack_wltp_upc/` 已下载并校验 `412/412` 文件，约 1.32GB；数据被 `.gitignore` 排除。
+- `outputs/upc_pack_summary_full.csv` 已生成全量 downsample=100 概览：
+  - 410 Parquet cycles
+  - 295 WLTP / 115 Capacity_check
+  - 3 个 cycle 含 Balancing semicycle
+  - 平均 cell voltage spread 约 `69.34 mV`
+  - 最大 cell voltage spread 约 `1312 mV`
+- UPC 温度列存在约 650°C 级占位/异常值；当前 summary 保留 `temperature_max_raw_C`，并额外使用 `-40~120°C` 有效温度分位数做分析。
+- `SIMULINK_PACK_WORKFLOW.md` 已说明已有 pack 资产时的数据回放、策略闭环和 balancing on/off paired test 流程。
+
 ### 电流符号
 
 - NASA/W2 张量：正电流表示充电，负电流表示放电。
@@ -464,10 +479,9 @@ aging = 120
    - Scientific Data 2025
    - 数据 DOI：`10.34810/DATA2395`
    - 结构：12S3P，36 cell voltage，3 branch current，72 cell temperature，BMS SOC，balancing semicycle
-2. 先下载 3-5 个 Parquet 文件做 loader smoke。
-3. 新增 `pack_dataset_upc.py`，输出统一 pack time-series 接口。
-4. 将现有 `pack_balance.py` 的策略轨迹和 UPC 实测 pack 数据对齐，重点看 cell voltage spread、balancing 触发和 pack safety。
-5. BattGP 8S LFP field data 作为可选补充，用于弱单体/异常/真实服役电压 spread 定性图。
+2. 当前 loader 和全量 summary 已完成。
+3. 下一步将 `pack_balance.py` 的策略轨迹和 UPC 实测 pack 数据对齐，重点看 cell voltage spread、balancing 触发和 pack safety。
+4. BattGP 8S LFP field data 作为可选补充，用于弱单体/异常/真实服役电压 spread 定性图。
 
 ### B. 补 W4 剩余创新点
 
@@ -514,12 +528,12 @@ aging = 120
 最建议现在做：
 
 ```text
-接入 UPC 36-cell pack WLTP+CC-CV 数据集。
+把 pack_balance.py 的策略轨迹对齐到 UPC 36-cell 实测 pack 数据。
 ```
 
 原因：
 
 - 6S1P Python pack 已跑通。
 - 仓库内 Simulink 30 模组资产来源未知，不宜作为论文定量依据。
-- UPC 数据有 DOI、Scientific Data 论文、cell-level voltage/current/temperature 与 balancing 记录。
+- UPC 全量数据和 loader 已就位，具备 cell-level voltage/current/temperature 与 balancing 记录。
 - 能把“单体智能快充”升级成可信公开数据支撑的“包级均衡验证”。

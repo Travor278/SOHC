@@ -107,9 +107,26 @@ v0.2 采用**纯 NASA Plus 多子集同源训练**：
 - 用途：**W5 可信包级定量验证**，尤其是 cell voltage spread、balancing 触发、动态 WLTP 工况与包级安全约束。
 - 注意：不进 W1-W4 主训练；只用于 W5 包级验证，避免破坏 NASA 同源训练策略。
 - 建议：
-  1. 先下载 3-5 个 Parquet 文件做 loader smoke。
-  2. 跑通后再按 cycle 分批增量下载。
-  3. 不建议一次性阻塞下载全 1.3 GB。
+  1. 使用 `scripts/download_upc_pack.py` 通过 Dataverse API 下载并校验。
+  2. 数据已在本机全量就位；换机时可重新运行脚本。
+  3. 用 `python -m craic_pipeline.pack_dataset_upc` 生成 summary 或 Simulink CSV。
+
+下载命令：
+
+```bash
+python scripts/download_upc_pack.py
+```
+
+Loader / Simulink CSV smoke：
+
+```bash
+python -m craic_pipeline.pack_dataset_upc \
+  --data-dir data/pack_wltp_upc \
+  --pattern "Qtzl_Cycle_003_WLTP_partial_data.parquet" \
+  --downsample 10 \
+  --summary-out outputs/upc_cycle003_summary.csv \
+  --simulink-csv-out outputs/upc_cycle003_simulink.csv
+```
 
 ### `data/battgp_field/` — BattGP 8S LFP field data (~1.7 GB)
 
