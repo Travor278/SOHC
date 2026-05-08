@@ -451,17 +451,23 @@ aging = 120
 6. 包级原型仍是 Python supervisory simulator。
    - 当前没有直接求解 buck-boost 开关电路。
    - 30S1P 短烟测已完成。
-   - 下一步应对接 `batterpack.slx` / `buck_boost_balance.slx` 做 Simulink 级验证。
+   - 仓库内 `batterpack.slx` / `buck_boost_balance.slx` 来源未知，后续只作可选接口演示，不作为论文定量依据。
+   - 包级定量验证改用可信公开数据集，详见 `PACK_DATASETS.md`。
 
 ## 8. 下一步建议
 
 建议下一步优先顺序：
 
-### A. 包级扩展继续推进
+### A. 可信包级数据验证
 
-1. 将 Python 输出的 per-cell current/SOC trajectory 导出给 Simulink。
-2. 在 `batterpack.slx` / `buck_boost_balance.slx` 中验证 buck-boost 均衡响应。
-3. 保留 6S1P 作为论文主图，30S1P 作为工程扩展图。
+1. 首选 UPC 36-cell pack WLTP+CC-CV 数据集：
+   - Scientific Data 2025
+   - 数据 DOI：`10.34810/DATA2395`
+   - 结构：12S3P，36 cell voltage，3 branch current，72 cell temperature，BMS SOC，balancing semicycle
+2. 先下载 3-5 个 Parquet 文件做 loader smoke。
+3. 新增 `pack_dataset_upc.py`，输出统一 pack time-series 接口。
+4. 将现有 `pack_balance.py` 的策略轨迹和 UPC 实测 pack 数据对齐，重点看 cell voltage spread、balancing 触发和 pack safety。
+5. BattGP 8S LFP field data 作为可选补充，用于弱单体/异常/真实服役电压 spread 定性图。
 
 ### B. 补 W4 剩余创新点
 
@@ -508,11 +514,12 @@ aging = 120
 最建议现在做：
 
 ```text
-对接 Simulink buck-boost balance。
+接入 UPC 36-cell pack WLTP+CC-CV 数据集。
 ```
 
 原因：
 
 - 6S1P Python pack 已跑通。
-- 30S1P smoke 已跑通，是现有 Simulink 30 模组资产的自然接口。
-- 能把“单体智能快充”升级成“包级均衡验证”。
+- 仓库内 Simulink 30 模组资产来源未知，不宜作为论文定量依据。
+- UPC 数据有 DOI、Scientific Data 论文、cell-level voltage/current/temperature 与 balancing 记录。
+- 能把“单体智能快充”升级成可信公开数据支撑的“包级均衡验证”。

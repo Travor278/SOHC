@@ -11,6 +11,8 @@ v0.2 采用**纯 NASA Plus 多子集同源训练**：
 | Mamba 世界模型 | NASA B0005-B0018 + Randomized Battery Usage 1-7 | 训练 |
 | RL（SAC） | 在 Mamba env 上跑，无独立数据 | — |
 | 真实驾驶定量泛化 | Zenodo 6985321 (WLTP+老化) | W5 定量 zero-shot |
+| 可信包级均衡验证 | UPC 36-cell pack WLTP+CC-CV | W5 包级定量验证 |
+| 真实服役 pack 补充 | BattGP 8S LFP field data | W5 可选 field-data 补充 |
 | 真实电站定性外推 | Zenodo 18471156 | W5 PPT 定性展示 |
 | LFP 跨化学体系泛化（可选） | HUST CSV（仓库已携带）| W5 可选展示 |
 
@@ -87,6 +89,37 @@ v0.2 采用**纯 NASA Plus 多子集同源训练**：
   1. Zenodo 直接下载 BatteryData.zip
   2. 解压到 `data/zenodo_18471156/`
   3. 选其中一节电池一段时序，跑训好的 SOC/SOH 估计器 inference，画曲线
+
+### `data/pack_wltp_upc/` — UPC 36-cell pack WLTP+CC-CV (~1.3 GB)
+
+- 来源：[CORA.RDR / UPC Dataverse](https://dataverse.csuc.cat/dataset.xhtml?persistentId=doi:10.34810/DATA2395)
+- 论文：[Scientific Data 2025](https://doi.org/10.1038/s41597-025-06229-5)
+- 数据 DOI：https://doi.org/10.34810/DATA2395
+- 数据：36 个 Panasonic NCR18650B cell，三组并联支路，每支路 12 串，可抽象为 `12S3P`
+- 文件：412 个公开文件，主要为 Parquet；单文件约 1-3 MB，总包约 1.3 GB
+- 关键信号：
+  - 36 个单体电压
+  - 3 个支路电流
+  - pack 电压 / pack 电阻
+  - 72 个 cell 表面温度 + 2 个环境温度
+  - BMS SOC
+  - WLTP / CC-CV / capacity check / balancing semicycle
+- 用途：**W5 可信包级定量验证**，尤其是 cell voltage spread、balancing 触发、动态 WLTP 工况与包级安全约束。
+- 注意：不进 W1-W4 主训练；只用于 W5 包级验证，避免破坏 NASA 同源训练策略。
+- 建议：
+  1. 先下载 3-5 个 Parquet 文件做 loader smoke。
+  2. 跑通后再按 cycle 分批增量下载。
+  3. 不建议一次性阻塞下载全 1.3 GB。
+
+### `data/battgp_field/` — BattGP 8S LFP field data (~1.7 GB)
+
+- 来源：[Zenodo 13715694](https://zenodo.org/records/13715694)
+- 论文：[Cell Reports Physical Science 2024](https://doi.org/10.1016/j.xcrp.2024.102258)
+- 代码：[JoachimSchaeffer/BattGP](https://github.com/JoachimSchaeffer/BattGP)
+- 数据：28 个 24V LFP battery systems，每个系统 8 个 prismatic cells 串联，真实服役 1 个月到 5 年
+- 关键信号：cell voltage、pack current、temperature、active cell balancing、SOC
+- 用途：W5 可选 field-data 补充，适合弱单体/异常/电压 spread 可视化。
+- 注意：LFP + 大容量 prismatic + 返修异常系统，有明显 domain shift 和采样偏置；不作为快充主定量验证。
 
 ## 验证下载完成
 

@@ -108,7 +108,12 @@
 - [x] Python 6S1P 包级原型：单体 SAC/CC-CV/MFCC 策略复制 + SOC-spread 均衡协调器
 - [x] 输出包级对比：`outputs/eval_pack_6s1p_h1200/`（轨迹、summary、paired-vs-CCCV、pack 对比图）
 - [x] Python 30S1P 包级烟测：用于对接现有 `batterpack.slx` / `buck_boost_balance.slx`
-- [ ] Simulink 30 模组：每模组独立 SAC 策略，导出包级仿真
+- [x] 调研可信包级数据集，新增 `PACK_DATASETS.md`
+- [ ] 下载 UPC 36-cell pack WLTP+CC-CV 少量 Parquet 文件 → `data/pack_wltp_upc/`
+- [ ] 写 `craic_pipeline/pack_dataset_upc.py`：解析 UPC pack Parquet 到统一接口
+- [ ] 在 UPC 36-cell pack 上评估 cell voltage spread / balancing semicycle / pack safety
+- [ ] （可选）Simulink 30 模组：仅作接口演示，不作为论文定量依据
+- [ ] （可选）BattGP 8S LFP field data：弱单体/异常/电压 spread 定性图
 - [ ] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量** L3）
 - [ ] **Zenodo 18471156 定性展示（L4）**：
   - [ ] 下载 BatteryData.zip 解压
@@ -151,6 +156,7 @@
 - 2026-05-08 W4 eval：`eval_compare.py` 已输出 `trajectories.csv`、`metrics_by_episode.csv`、`metrics_summary.csv`、`paired_vs_cc_cv.csv` 和 `charging_comparison.png`。正式输出在 `outputs/eval_w4_final_default/`。CC-CV 采用 3A（接近 NASA/18650 常规倍率）作为基线；在双方都到达 80% SOC 的 paired episodes 上，SAC vs CC-CV：充电时间 596.5s → 411.75s（快 30.97%）、ΔSOH 0.001859 → 0.001536（降 17.37%）、过压 0 → 0。
 - 2026-05-08 W4 caveat：随机初始 SOC 下，CC-CV/MFCC 在 800s 内并非每个 episode 都能到 80%，因此“充至 80% 耗时”的核心百分比用同初始条件且双方均 hit target 的 paired episodes 统计；整体表同时保留 hit_rate 和 soc_end_mean，供答辩时透明说明。
 - 2026-05-08 W5 pack prototype：新增 `craic_pipeline/pack_balance.py`，默认 `6S1P`，支持 `30S1P` CLI；仿照 liionpack 的“单体模型扩成 series/parallel pack”思想，但不引入 PyBaMM 大依赖。当前 `outputs/eval_pack_6s1p_h1200/` 结果：SAC hit_rate 3/3，CC-CV 1/3，MFCC 0/3；paired episode 上 SAC vs CC-CV 充电时间 1121s → 668s（快 40.41%）、平均 ΔSOH 降 23.01%、末端 SOC spread 降 28.00%、实际过压 0。`outputs/eval_pack_30s1p_smoke/` 已完成 30S1P 短烟测，三策略 120 step 均无实际过压，可作为 Simulink 30 模组对接入口。
+- 2026-05-08 W5 数据源调整：仓库自带 `batterpack.slx` / `buck_boost_balance.slx` / `Rebattery_Modeling-master/` 来源与参数依据不明，后续只作可选接口演示；包级定量验证改用可信公开数据。首选 UPC 36-cell pack WLTP+CC-CV 数据集（Scientific Data 2025，DOI `10.1038/s41597-025-06229-5`，数据 DOI `10.34810/DATA2395`，12S3P、36 cell voltage、3 branch current、72 cell temperature、BMS SOC、balancing semicycle）。BattGP 8S LFP field data（Zenodo `10.5281/zenodo.13715694`）作为真实服役弱单体/异常补充。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
