@@ -13,7 +13,10 @@
     "fig11_active_balancer_topology.png",
     "fig12_upc_measured_profile.png",
     "fig13_upc_real_balancing_semicycle.png",
-    "fig14_python_balancing_short_sim.png"
+    "fig14_python_balancing_short_sim.png",
+    "fig17_simulink_pack_workflow.png",
+    "zenodo_18471156/fig16_zenodo_18471156_station_demo.png",
+    "zenodo_6985321/fig15_zenodo_6985321_zero_shot.png"
   ],
   "note": "Figures generated from local CRAIC2026 artifacts; third-party reference images are not included."
 }

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
   "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="515.52pt" height="299.59875pt" viewBox="0 0 515.52 299.59875" xmlns="http://www.w3.org/2000/svg" version="1.1">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="515.52pt" height="299.675pt" viewBox="0 0 515.52 299.675" xmlns="http://www.w3.org/2000/svg" version="1.1">
  <metadata>
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-05-08T16:48:02.264028</dc:date>
+    <dc:date>2026-05-08T17:31:31.614483</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -21,8 +21,8 @@
  </defs>
  <g id="figure_1">
   <g id="patch_1">
-   <path d="M 0 299.59875 
-L 515.52 299.59875 
+   <path d="M 0 299.675 
+L 515.52 299.675 
 L 515.52 0 
 L 0 0 
 z
@@ -30,228 +30,228 @@ z
   </g>
   <g id="axes_1">
    <g id="patch_2">
-    <path d="M 29.24928 89.74371 
-L 125.46432 89.74371 
-Q 131.47776 89.74371 131.47776 86.46627 
-L 131.47776 44.95203 
-Q 131.47776 41.67459 125.46432 41.67459 
-L 29.24928 41.67459 
-Q 23.23584 41.67459 23.23584 44.95203 
-L 23.23584 86.46627 
-Q 23.23584 89.74371 29.24928 89.74371 
+    <path d="M 29.24928 89.37476 
+L 125.46432 89.37476 
+Q 131.47776 89.37476 131.47776 86.09012 
+L 131.47776 44.48468 
+Q 131.47776 41.20004 125.46432 41.20004 
+L 29.24928 41.20004 
+Q 23.23584 41.20004 23.23584 44.48468 
+L 23.23584 86.09012 
+Q 23.23584 89.37476 29.24928 89.37476 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #e8eef7; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #e8eef7; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_3">
-    <path d="M 154.52928 89.74371 
-L 250.74432 89.74371 
-Q 256.75776 89.74371 256.75776 86.46627 
-L 256.75776 44.95203 
-Q 256.75776 41.67459 250.74432 41.67459 
-L 154.52928 41.67459 
-Q 148.51584 41.67459 148.51584 44.95203 
-L 148.51584 86.46627 
-Q 148.51584 89.74371 154.52928 89.74371 
+    <path d="M 154.52928 89.37476 
+L 250.74432 89.37476 
+Q 256.75776 89.37476 256.75776 86.09012 
+L 256.75776 44.48468 
+Q 256.75776 41.20004 250.74432 41.20004 
+L 154.52928 41.20004 
+Q 148.51584 41.20004 148.51584 44.48468 
+L 148.51584 86.09012 
+Q 148.51584 89.37476 154.52928 89.37476 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #e9f5ee; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #e9f5ee; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_4">
-    <path d="M 279.80928 89.74371 
-L 386.04672 89.74371 
-Q 392.06016 89.74371 392.06016 86.46627 
-L 392.06016 44.95203 
-Q 392.06016 41.67459 386.04672 41.67459 
-L 279.80928 41.67459 
-Q 273.79584 41.67459 273.79584 44.95203 
-L 273.79584 86.46627 
-Q 273.79584 89.74371 279.80928 89.74371 
+    <path d="M 279.80928 89.37476 
+L 386.04672 89.37476 
+Q 392.06016 89.37476 392.06016 86.09012 
+L 392.06016 44.48468 
+Q 392.06016 41.20004 386.04672 41.20004 
+L 279.80928 41.20004 
+Q 273.79584 41.20004 273.79584 44.48468 
+L 273.79584 86.09012 
+Q 273.79584 89.37476 279.80928 89.37476 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #fff4e4; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #fff4e4; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_5">
-    <path d="M 279.80928 160.75491 
-L 386.04672 160.75491 
-Q 392.06016 160.75491 392.06016 157.47747 
-L 392.06016 115.96323 
-Q 392.06016 112.68579 386.04672 112.68579 
-L 279.80928 112.68579 
-Q 273.79584 112.68579 273.79584 115.96323 
-L 273.79584 157.47747 
-Q 273.79584 160.75491 279.80928 160.75491 
+    <path d="M 279.80928 160.54196 
+L 386.04672 160.54196 
+Q 392.06016 160.54196 392.06016 157.25732 
+L 392.06016 115.65188 
+Q 392.06016 112.36724 386.04672 112.36724 
+L 279.80928 112.36724 
+Q 273.79584 112.36724 273.79584 115.65188 
+L 273.79584 157.25732 
+Q 273.79584 160.54196 279.80928 160.54196 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #f3ecf8; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #f3ecf8; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_6">
-    <path d="M 154.52928 160.75491 
-L 250.74432 160.75491 
-Q 256.75776 160.75491 256.75776 157.47747 
-L 256.75776 115.96323 
-Q 256.75776 112.68579 250.74432 112.68579 
-L 154.52928 112.68579 
-Q 148.51584 112.68579 148.51584 115.96323 
-L 148.51584 157.47747 
-Q 148.51584 160.75491 154.52928 160.75491 
+    <path d="M 154.52928 160.54196 
+L 250.74432 160.54196 
+Q 256.75776 160.54196 256.75776 157.25732 
+L 256.75776 115.65188 
+Q 256.75776 112.36724 250.74432 112.36724 
+L 154.52928 112.36724 
+Q 148.51584 112.36724 148.51584 115.65188 
+L 148.51584 157.25732 
+Q 148.51584 160.54196 154.52928 160.54196 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #fcebeb; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #fcebeb; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_7">
-    <path d="M 29.24928 160.75491 
-L 125.46432 160.75491 
-Q 131.47776 160.75491 131.47776 157.47747 
-L 131.47776 115.96323 
-Q 131.47776 112.68579 125.46432 112.68579 
-L 29.24928 112.68579 
-Q 23.23584 112.68579 23.23584 115.96323 
-L 23.23584 157.47747 
-Q 23.23584 160.75491 29.24928 160.75491 
+    <path d="M 29.24928 160.54196 
+L 125.46432 160.54196 
+Q 131.47776 160.54196 131.47776 157.25732 
+L 131.47776 115.65188 
+Q 131.47776 112.36724 125.46432 112.36724 
+L 29.24928 112.36724 
+Q 23.23584 112.36724 23.23584 115.65188 
+L 23.23584 157.25732 
+Q 23.23584 160.54196 29.24928 160.54196 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #f7f7f7; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #f7f7f7; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="patch_8">
-    <path d="M 154.52928 248.15331 
-L 386.04672 248.15331 
-Q 392.06016 248.15331 392.06016 244.87587 
-L 392.06016 197.89923 
-Q 392.06016 194.62179 386.04672 194.62179 
-L 154.52928 194.62179 
-Q 148.51584 194.62179 148.51584 197.89923 
-L 148.51584 244.87587 
-Q 148.51584 248.15331 154.52928 248.15331 
+    <path d="M 154.52928 248.13236 
+L 386.04672 248.13236 
+Q 392.06016 248.13236 392.06016 244.84772 
+L 392.06016 197.76788 
+Q 392.06016 194.48324 386.04672 194.48324 
+L 154.52928 194.48324 
+Q 148.51584 194.48324 148.51584 197.76788 
+L 148.51584 244.84772 
+Q 148.51584 248.13236 154.52928 248.13236 
 z
-" clip-path="url(#p9eccf9f4d4)" style="fill: #eef2f2; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
+" clip-path="url(#pbf1740cbb8)" style="fill: #eef2f2; stroke: #303030; stroke-width: 0.8; stroke-linejoin: miter"/>
    </g>
    <g id="text_1">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(52.98805 59.262337)">NASA PCoE</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(44.9443 67.91665)">B0005-18 / ARC</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(52.2168 76.570962)">Randomized</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(56.35055 59.109775)">NASA PCoE</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(50.24055 67.209275)">B0005-18 / ARC</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(57.1393 75.308775)">Randomized</text>
    </g>
    <g id="text_2">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(184.0018 59.262337)">W1 State</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(182.6718 67.91665)">Estimator</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(180.1593 76.570962)">SOC / SOH</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(187.86305 59.109775)">W1 State</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(187.0843 67.209275)">Estimator</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(183.742425 75.308775)">SOC / SOH</text>
    </g>
    <g id="text_3">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(309.781125 59.205462)">W2 Mamba</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(306.94425 67.859775)">World Model</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(295.493 76.514087)">next-state + aging</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(313.933 59.102275)">W2 Mamba</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(311.5855 67.201775)">World Model</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(304.236125 75.301275)">next-state + aging</text>
    </g>
    <g id="text_4">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(303.04175 130.159787)">W3 SAC Policy</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(310.627375 138.92785)">continuous</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(298.3755 147.582162)">charging current</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(307.148625 130.261975)">W3 SAC Policy</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(315.373 138.376475)">continuous</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(306.677375 146.475975)">charging current</text>
    </g>
    <g id="text_5">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(171.976175 130.102912)">L3 ECM Safety</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(162.4518 138.870975)">voltage-constrained</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(168.269925 147.639037)">action projection</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(177.3068 130.248569)">L3 ECM Safety</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(171.09305 138.363069)">voltage-constrained</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(175.646175 146.481881)">action projection</text>
    </g>
    <g id="text_6">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(48.2018 130.159787)">Safe Charging</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(57.417425 138.92785)">trajectory</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(49.469925 147.695912)">I / V / SOC / T</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(54.432425 130.259819)">Safe Charging</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(62.032425 138.378631)">trajectory</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(53.78805 146.493131)">I / V / SOC / T</text>
    </g>
    <g id="text_7">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(239.413625 214.883862)">Pack Extension</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(148.5005 223.538175)">single-cell policy replication + SOC-spread active balancing</text>
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(172.788625 232.306237)">UPC 36-cell pack validation / Simulink interface</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(245.51425 215.122675)">Pack Extension</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(173.618 223.222175)">single-cell policy replication + SOC-spread active balancing</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif" transform="translate(192.08425 231.336675)">UPC 36-cell pack validation / Simulink interface</text>
    </g>
    <g id="patch_9">
-    <path d="M 124.457309 65.70915 
-Q 139.997268 65.70915 154.642799 65.70915 
+    <path d="M 124.457309 65.2874 
+Q 139.997268 65.2874 154.642799 65.2874 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 151.442799 64.10915 
-L 154.642799 65.70915 
-L 151.442799 67.30915 
+    <path d="M 151.442799 63.6874 
+L 154.642799 65.2874 
+L 151.442799 66.8874 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_10">
-    <path d="M 249.737309 65.70915 
-Q 265.277268 65.70915 279.922799 65.70915 
+    <path d="M 249.737309 65.2874 
+Q 265.277268 65.2874 279.922799 65.2874 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 276.722799 64.10915 
-L 279.922799 65.70915 
-L 276.722799 67.30915 
+    <path d="M 276.722799 63.6874 
+L 279.922799 65.2874 
+L 276.722799 66.8874 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_11">
-    <path d="M 332.928 86.82394 
-Q 332.928 101.211683 332.928 114.704998 
+    <path d="M 332.928 86.448576 
+Q 332.928 100.871691 332.928 114.40038 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 334.528 111.504998 
-L 332.928 114.704998 
-L 331.328 111.504998 
+    <path d="M 334.528 111.20038 
+L 332.928 114.40038 
+L 331.328 111.20038 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_12">
-    <path d="M 280.816291 136.72035 
-Q 265.276332 136.72035 250.630801 136.72035 
+    <path d="M 280.816291 136.4546 
+Q 265.276332 136.4546 250.630801 136.4546 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 253.830801 138.32035 
-L 250.630801 136.72035 
-L 253.830801 135.12035 
+    <path d="M 253.830801 138.0546 
+L 250.630801 136.4546 
+L 253.830801 134.8546 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_13">
-    <path d="M 155.536291 136.72035 
-Q 139.996332 136.72035 125.350801 136.72035 
+    <path d="M 155.536291 136.4546 
+Q 139.996332 136.4546 125.350801 136.4546 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 128.550801 138.32035 
-L 125.350801 136.72035 
-L 128.550801 135.12035 
+    <path d="M 128.550801 138.0546 
+L 125.350801 136.4546 
+L 128.550801 134.8546 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_14">
-    <path d="M 79.008441 156.96397 
-Q 117.446636 183.150911 155.145644 208.834263 
+    <path d="M 79.008441 156.742692 
+Q 117.446636 182.987161 155.146159 208.727287 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 153.401895 205.710269 
-L 155.145644 208.834263 
-L 151.600199 208.354866 
+    <path d="M 153.405601 205.601513 
+L 155.146159 208.727287 
+L 151.601206 208.244269 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_15">
-    <path d="M 331.675506 157.399055 
-Q 315.38915 177.687914 299.662696 197.279271 
+    <path d="M 331.679788 157.173386 
+Q 315.389305 177.511969 299.657977 197.15245 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 302.913592 195.785394 
-L 299.662696 197.279271 
-L 300.418132 193.782227 
+    <path d="M 302.907272 195.655092 
+L 299.657977 197.15245 
+L 300.409668 193.654599 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="patch_16">
-    <path d="M 208.298563 157.729786 
-Q 215.16483 177.688438 221.74013 196.801314 
+    <path d="M 208.296728 157.504844 
+Q 215.164749 177.512452 221.742373 196.674087 
 " style="fill: none; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
-    <path d="M 222.212102 193.254873 
-L 221.74013 196.801314 
-L 219.186161 194.295871 
+    <path d="M 222.216737 193.127966 
+L 221.742373 196.674087 
+L 219.190094 194.166923 
 z
 " style="fill: #303030; stroke: #303030; stroke-width: 0.8; stroke-linecap: round"/>
    </g>
    <g id="text_8">
-    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="332.928" y="105.827747" transform="rotate(-0 332.928 105.827747)">state-action history</text>
+    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="332.928" y="105.283278" transform="rotate(-0 332.928 105.283278)">state-action history</text>
    </g>
    <g id="text_9">
-    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="207.648" y="105.877512" transform="rotate(-0 207.648 105.877512)">[SOC, SOH, V, I, T]</text>
+    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="207.648" y="105.289841" transform="rotate(-0 207.648 105.289841)">[SOC, SOH, V, I, T]</text>
    </g>
    <g id="text_10">
-    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="202.6368" y="176.888712" transform="rotate(-0 202.6368 176.888712)">safe current</text>
+    <text style="font-size: 7px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle; fill: #555555" x="202.6368" y="176.457041" transform="rotate(-0 202.6368 176.457041)">safe current</text>
    </g>
    <g id="text_11">
-    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle" x="257.76" y="13.27875" transform="rotate(-0 257.76 13.27875)">EV Fast-Charging Decision Framework</text>
+    <text style="font-size: 8px; font-family: 'Times New Roman', 'DejaVu Serif', 'Times', serif; text-anchor: middle" x="257.76" y="12.755" transform="rotate(-0 257.76 12.755)">EV Fast-Charging Decision Framework</text>
    </g>
   </g>
  </g>
  <defs>
-  <clipPath id="p9eccf9f4d4">
-   <rect x="7.2" y="19.27875" width="501.12" height="273.12"/>
+  <clipPath id="pbf1740cbb8">
+   <rect x="7.2" y="18.755" width="501.12" height="273.72"/>
   </clipPath>
  </defs>
 </svg>

@@ -2,7 +2,7 @@
 
 更新日期：2026-05-08  
 仓库：`https://github.com/Travor278/SOHC`  
-当前阶段：W0-W4 主链路已跑通，W5/展示扩展待推进。
+当前阶段：W0-W4 主链路已跑通，W5 包级/展示扩展已形成论文初稿产物。
 
 ## 1. 系统整体框架
 
@@ -54,8 +54,8 @@ W5: 多单体 / 包级扩展
   - `data/nasa_pcoe/Randomized/`
 - LG 18650HG2 只作为 KeiLongW SOC 预训练权重来源。
 - HUST 数据仅保留为可选展示，不进训练主线。
-- Zenodo 6985321 已下载，可作为 W5 定量泛化输入。
-- Zenodo 18471156 仍未下载，仅计划用于 W5 末尾定性展示，不进训练。
+- Zenodo 6985321 已下载并完成 zero-shot 诊断，只作跨数据集泛化分析，不进训练。
+- Zenodo 18471156 已下载并完成真实电站定性展示，不进训练、不作定量 SOH 结论。
 
 ## 3. 已实现代码模块
 
@@ -73,6 +73,8 @@ W5: 多单体 / 包级扩展
 | `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 均衡、包级指标与画图 |
 | `craic_pipeline/pack_dataset_upc.py` | 已实现 | UPC 36-cell pack Parquet 加载、summary、Simulink CSV 导出 |
 | `craic_pipeline/eval_upc_pack.py` | 已实现 | UPC 真实数据论文图表 + Python active buck-boost 短仿真 |
+| `craic_pipeline/zenodo_zero_shot.py` | 已实现 | Zenodo 6985321 fresh/aged cell zero-shot SOC/SOH 诊断 |
+| `craic_pipeline/station_demo_18471156.py` | 已实现 | Zenodo 18471156 真实电站定性展示图 |
 
 ## 3.1 W1 主要算法
 
@@ -389,6 +391,24 @@ W3 环境每一步执行：
 - 结果：CC-CV / MFCC / SAC 三策略实际过压均为 0
 - 用途：作为 `batterpack.slx` / `buck_boost_balance.slx` 的 per-cell current/SOC 轨迹接口验证，不作为最终性能对比。
 
+### W5 泛化展示
+
+Zenodo 6985321 已完成 zero-shot 诊断：
+
+| 数据 | SOC MAE | SOC P95 | 半循环 SOH 中位数 |
+|---|---:|---:|---:|
+| fresh cell | `16.11%` | `35.13%` | `98.02%` |
+| aged cell | `14.03%` | `34.01%` | `81.23%` |
+
+结论：SOC zero-shot 误差较高，说明跨 cell 尺度 / 工况协议迁移仍是短板；SOH throughput 重建能给出接近 aged reference `83.2%` 的诊断结果，但不代表部署式无标签 SOH。
+
+Zenodo 18471156 已完成真实储能电站定性展示：
+
+- 数据：`600` 个 CSV 片段，字段为 `vol_1..vol_8`、`temp_1..temp_8`、`cur`。
+- 选中片段：`real_world_05_06/battery_03_cells_017-024_t_04000-07999.csv`。
+- 指标：电压 spread P95 `21.00 mV`，最大 `138.00 mV`，电流绝对值 P95 `135.70 A`。
+- 图中 SOC 为 W1 LSTM 定性输出；SOH 因无容量标签改为 consistency proxy，不能作 SOH 定量结论。
+
 ## 6. 当前重要工程决策
 
 ### 包级可信数据
@@ -469,9 +489,9 @@ aging = 120
 4. BatteryML Mamba-head SOH 尚未做。
    - 这是 W4 剩余的架构创新点展示项。
 
-5. Zenodo 6985321 zero-shot 尚未完成。
-   - 数据和 OCV-SOC 曲线已在 `data/zenodo_6985321/`。
-   - 需要用 OCV-SOC 表 + 库仑积分重建参考 SOC/SOH，再跑 zero-shot 曲线。
+5. Zenodo 6985321 zero-shot 已完成但 SOC 精度不足。
+   - fresh/aged SOC MAE 分别为 `16.11%` / `14.03%`。
+   - 可作为跨尺度迁移瓶颈诊断，不宜写成泛化达标结果。
 
 6. 包级原型仍是 Python supervisory simulator。
    - 当前没有直接求解 buck-boost 开关电路。
@@ -483,15 +503,11 @@ aging = 120
 
 建议下一步优先顺序：
 
-### A. 可信包级数据验证
+### A. Randomized 动态负载指标复核
 
-1. 首选 UPC 36-cell pack WLTP+CC-CV 数据集：
-   - Scientific Data 2025
-   - 数据 DOI：`10.34810/DATA2395`
-   - 结构：12S3P，36 cell voltage，3 branch current，72 cell temperature，BMS SOC，balancing semicycle
-2. 当前 loader 和全量 summary 已完成。
-3. 下一步将 `pack_balance.py` 的策略轨迹和 UPC 实测 pack 数据对齐，重点看 cell voltage spread、balancing 触发和 pack safety。
-4. BattGP 8S LFP field data 作为可选补充，用于弱单体/异常/真实服役电压 spread 定性图。
+1. 统一 `SYSTEM_STATUS.md` / `TODO.md` / metrics JSON 中 Randomized 20-step rollout 口径。
+2. 建议用 `stride=512/1024` 补齐 28 个 RW 文件，降低运行时长。
+3. 输出 `paper_figures/fig18_randomized_rollout_recheck.png`，再决定正文是否写 20-step 动态负载指标。
 
 ### B. 补 W4 剩余创新点
 
@@ -502,17 +518,11 @@ aging = 120
    - Mamba feature/head variant
 3. 目标不是重新大幅提升 RMSE，而是形成“BatteryML 内挂 Mamba head”的架构创新证据。
 
-### C. 做 Zenodo 6985321 zero-shot
+### C. 补泛化与展示的可信边界
 
-1. 读取：
-   - `Experimental_data_fresh_cell.csv`
-   - `Experimental_data_aged_cell.csv`
-   - `OCV_vs_SOC_curve.csv`
-2. 用 OCV-SOC 表和库仑积分重建参考 SOC。
-3. 跑当前 SOC/SOH inference。
-4. 输出：
-   - `outputs/zenodo_6985321_zero_shot_metrics.csv`
-   - `outputs/figures/zenodo_6985321_soc_soh.png`
+1. Zenodo 6985321 已完成，正文只写“zero-shot 诊断”，不写“泛化达标”。
+2. Zenodo 18471156 已完成，正文只写“真实电站定性展示”，不写“SOH 定量准确”。
+3. 若要更强泛化结论，需要补有标签容量校准或 BMS SOC/SOH 真值。
 
 ### D. 准备答辩图表包
 
@@ -524,6 +534,8 @@ aging = 120
 4. W4 paired-vs-CCCV 指标表。
 5. W5 `pack_comparison.png`。
 6. Zenodo 6985321 zero-shot 曲线。
+7. Zenodo 18471156 真实电站定性图。
+8. Simulink pack validation workflow 图。
 
 ### E. 再考虑 SOC 精度攻坚
 
@@ -538,12 +550,11 @@ aging = 120
 最建议现在做：
 
 ```text
-把 pack_balance.py 的策略轨迹对齐到 UPC 36-cell 实测 pack 数据。
+复核 Randomized 20-step rollout 指标，并补 BatteryML Mamba-head SOH 对比。
 ```
 
 原因：
 
-- 6S1P Python pack 已跑通。
-- 仓库内 Simulink 30 模组资产来源未知，不宜作为论文定量依据。
-- UPC 全量数据和 loader 已就位，具备 cell-level voltage/current/temperature 与 balancing 记录。
-- 能把“单体智能快充”升级成可信公开数据支撑的“包级均衡验证”。
+- 主链路、包级 UPC、Zenodo 展示图都已具备。
+- 当前最影响论文严谨性的剩余项是 Randomized 指标口径不一致。
+- BatteryML Mamba-head SOH 是架构创新补强项，适合放在最终版本对比表中。

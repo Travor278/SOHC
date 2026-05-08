@@ -1,0 +1,18 @@
+{
+  "source": "10.5281/zenodo.18471156",
+  "selected_file": "data\\zenodo_18471156\\BatteryData\\BatteryData\\real_world_05_06\\battery_03_cells_017-024_t_04000-07999.csv",
+  "selection": {
+    "file": "data\\zenodo_18471156\\BatteryData\\BatteryData\\real_world_05_06\\battery_03_cells_017-024_t_04000-07999.csv",
+    "rows_scanned": 4000,
+    "spread_p95_mV": 20.99979999999979,
+    "spread_max_mV": 138.00000000000034,
+    "current_abs_p95_A": 135.69995
+  },
+  "rows": 4000,
+  "voltage_spread_initial_mV": 2.000000000000224,
+  "voltage_spread_p95_mV": 20.99979999999979,
+  "voltage_spread_max_mV": 138.00000000000034,
+  "current_abs_p95_A": 135.69995,
+  "soc_output_note": "W1 LSTM qualitative SOC, current_adapter=-cur/p95_abs_current*2A, p95_abs_current=135.700A",
+  "soh_output_note": "No capacity/SOH labels are available; consistency_proxy_percent is a voltage/temp spread proxy, not quantitative SOH."
+}

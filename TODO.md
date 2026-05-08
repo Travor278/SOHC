@@ -10,7 +10,7 @@
 - [x] `git clone https://github.com/KeiLongW/battery-state-estimation.git external/KeiLongW`
 - [x] `git clone https://github.com/microsoft/BatteryML.git external/BatteryML`
 - [x] 按 `data/README.md` 指引下载 NASA 三个子集（B0005-B0018、ARC-FY08Q4、Randomized）和 Zenodo 6985321
-- [ ] （可选）下载 Zenodo 18471156 BatteryData.zip 解压（仅 W5 用）
+- [x] （可选）下载 Zenodo 18471156 BatteryData.zip 解压（仅 W5 用）
 - [x] 验证 `MATLAB滤波算法代码——云储实时数据/1-2-model_identification_RC/result/savemat_2order.mat` 已存在
 
 ## W1 · SOC + SOH 估计器（NASA 同源训练）
@@ -100,8 +100,8 @@
 - [x] 画 4 联子图（I/V/SOC/T over t），各策略叠加
 - [x] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
 - [ ] 在 BatteryML 里挂 Mamba head 跑一版 SOH，加进对比表（架构创新点）
-- [ ] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建 SOC/SOH 参考标签
-- [ ] 在 Zenodo 6985321 上跑 zero-shot SOC/SOH inference（W5 定量泛化输入）
+- [x] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建 SOC/SOH 参考标签
+- [x] 在 Zenodo 6985321 上跑 zero-shot SOC/SOH inference（W5 定量诊断输入）
 
 ## W5 · 包级扩展 + 答辩
 
@@ -118,12 +118,12 @@
 - [x] 生成 IEEE 风格报告插图并插入 `CRAIC2026_REPORT_DRAFT.md`：`paper_figures/`
 - [ ] （可选）Simulink 30 模组：仅作接口演示，不作为论文定量依据
 - [ ] （可选）BattGP 8S LFP field data：弱单体/异常/电压 spread 定性图
-- [ ] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量** L3）
-- [ ] **Zenodo 18471156 定性展示（L4）**：
-  - [ ] 下载 BatteryData.zip 解压
-  - [ ] 选其中一节电池一段时序，跑训好的 SOC/SOH 估计器 inference
-  - [ ] 画 1 张曲线图：V/I/T 输入 + SOC/SOH 输出 over time
-  - [ ] PPT 末尾配文：「在真实储能电站监测数据上，本方案 SOC/SOH 输出曲线单调、范围合理、对温度突变响应平滑——验证工业部署潜力。」
+- [x] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量诊断** L3）
+- [x] **Zenodo 18471156 定性展示（L4）**：
+  - [x] 下载 BatteryData.zip 解压
+  - [x] 选其中一节电池一段时序，跑训好的 SOC 估计器 inference；SOH 因无容量标签改为 consistency proxy
+  - [x] 画 1 张曲线图：V/I/T 输入 + SOC/consistency 输出 over time
+  - [x] 报告末尾配文：真实储能电站监测数据展示工业部署接口潜力；无标签数据不作定量 SOH 结论
 - [ ] 端到端 Demo：插入电池参数 → 输出最优充电策略曲线
 - [ ] 可视化打包：注意力热图 + 世界模型预测 vs 真实 + RL I(t) 对照 + L3 + L4
 - [ ] PPT：架构图、对比表、Demo 视频
@@ -165,6 +165,9 @@
 - 2026-05-08 W5 UPC paper figures：新增 `craic_pipeline/eval_upc_pack.py` 和 `PAPER_UPC_PACK_RESULTS.md`，生成 `outputs/upc_pack_paper/fig_active_balancer_topology.png`、`fig_upc_measured_profile.png`、`fig_upc_real_balancing_semicycle.png`、`fig_python_balancing_short_sim.png`。实测 Cycle 003 WLTP：平均 spread 244.56 mV、P95 510.00 mV、最大 590.00 mV。Cycle 027 real balancing semicycle：起点 308.00 mV、段内最小 127.00 mV、终点 308.00 mV。Python active buck-boost 短仿真从 UPC 高 spread 样本初始化，30 min 内将 spread 622.00 mV → 334.00 mV（降 46.30%），max balance current 0.80 A。
 - 2026-05-08 Simulink 参考图：已克隆 `yavuzhanocak/Single-switch-capacitor-battery-balance` 到 `external_refs/simulink_balance/`，并下载 README 中 11 张 Simulink / SOC / voltage / Altium 图到本地参考目录。该仓库根目录未发现 license，因此只作本机参考，不提交图片，不作为论文结果图；引用与使用边界见 `SIMULINK_REFERENCE_IMAGES.md`。
 - 2026-05-08 报告插图：新增 `scripts/generate_ieee_figures.py` 和 `paper_figures/`，已生成/汇总 14 张图并插入 `CRAIC2026_REPORT_DRAFT.md`。世界模型图使用 WSL Mamba 环境生成；SOH 图在 WSL sklearn 1.8 读取 Windows sklearn 1.7.2 pickle 时有版本警告，但输出与既有 `outputs/soh_baseline.metrics.json` 一致，仅作报告可视化。
+- 2026-05-08 Zenodo 6985321：新增 `craic_pipeline/zenodo_zero_shot.py`，用配套 OCV/SOC 端点思想重建 SOC/SOH 参考并跑 W1 LSTM zero-shot。输出 `paper_figures/zenodo_6985321/fig15_zenodo_6985321_zero_shot.png`。fresh/aged SOC MAE 分别为 `16.11%` / `14.03%`，说明跨尺度迁移仍是短板；半循环 throughput SOH 中位数 fresh `98.02%`、aged `81.23%`，aged 与参考 `83.2%` 接近。
+- 2026-05-08 Zenodo 18471156：已下载并校验 `BatteryData.zip`（MD5 `c28d865877bdacf1cdc16130f4b73cfe`），解压出 `600` 个 CSV。该数据无 SOC/SOH/容量标签，只能定性展示；新增 `craic_pipeline/station_demo_18471156.py`，输出 `paper_figures/zenodo_18471156/fig16_zenodo_18471156_station_demo.png`。图中 SOC 为 W1 LSTM 定性输出，SOH 改为 voltage/temp spread consistency proxy，不能作为 SOH 定量结论。
+- 2026-05-08 Simulink workflow：新增 `paper_figures/fig17_simulink_pack_workflow.png`，明确 Python pack 策略轨迹如何通过 CSV/MAT bridge 接入 Simulink 30 模组和 buck-boost balancing on/off paired test；仍只作接口/电路烟测流程，不替代 UPC 定量包级结果。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。

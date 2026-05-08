@@ -1,0 +1,25 @@
+{
+  "source": "10.5281/zenodo.6985321",
+  "soc_weights": "outputs\\soc_finetuned.h5",
+  "prediction_stride": 30,
+  "current_adapter": "I_lstm=-I_zenodo/19.96Ah*2.0Ah",
+  "results": {
+    "fresh": {
+      "samples": 11941,
+      "duration_h": 99.53,
+      "soc_mae_percent": 16.1076360291509,
+      "soc_p95_percent": 35.12896390728354,
+      "half_cycle_count": 25,
+      "median_half_cycle_soh_percent": 98.02408398348817
+    },
+    "aged": {
+      "samples": 10248,
+      "duration_h": 85.42000000211917,
+      "soc_mae_percent": 14.031432654619838,
+      "soc_p95_percent": 34.006888763031725,
+      "half_cycle_count": 25,
+      "median_half_cycle_soh_percent": 81.22682373116025
+    }
+  },
+  "note": "SOC is a cross-dataset zero-shot diagnostic; SOH is reconstructed from endpoint-anchored half-cycle throughput."
+}

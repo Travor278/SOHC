@@ -150,6 +150,7 @@ def fig_data_flow(out_dir: Path) -> None:
     draw_box(ax, (0.65, 0.44), (0.24, 0.18), "World-model tensor\nX=(N,L,6)\ny=(N,4)", fc="#FFF4E4")
     draw_box(ax, (0.65, 0.14), (0.24, 0.16), "RL evaluation\nCC-CV / MFCC / SAC", fc="#F3ECF8")
     draw_box(ax, (0.65, 0.74), (0.24, 0.14), "UPC 36-cell pack\nW5 validation", fc="#EEF2F2")
+    draw_box(ax, (0.36, 0.02), (0.53, 0.10), "Zenodo 6985321 / 18471156\nzero-shot diagnostic and station qualitative display only", fc="#F7F7F7")
 
     draw_arrow(ax, (0.24, 0.78), (0.36, 0.68))
     draw_arrow(ax, (0.24, 0.54), (0.36, 0.66))
@@ -423,6 +424,44 @@ def copy_existing_figures(out_dir: Path) -> None:
             shutil.copy2(src_path, out_dir / dst)
 
 
+def fig_simulink_pack_workflow(out_dir: Path) -> None:
+    """Create a workflow diagram for using existing Simulink pack assets."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
+    ax.set_axis_off()
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+
+    draw_box(ax, (0.04, 0.70), (0.18, 0.16), "Python pack\nsimulator\n6S1P / 30S1P", fc="#E8EEF7")
+    draw_box(ax, (0.29, 0.70), (0.18, 0.16), "Policy export\nper-cell I(t)\nSOC/V/T init", fc="#E9F5EE")
+    draw_box(ax, (0.54, 0.70), (0.18, 0.16), "Simulink pack\nplant\n30 modules", fc="#FFF4E4")
+    draw_box(ax, (0.78, 0.70), (0.18, 0.16), "Buck-boost\nbalancer\non/off paired", fc="#FCEBEB")
+
+    draw_box(ax, (0.04, 0.36), (0.20, 0.16), "Input files\npack_to_simulink.csv\nparams.mat", fc="#F7F7F7")
+    draw_box(ax, (0.31, 0.36), (0.20, 0.16), "Signal builder\ncurrent source\ninitial states", fc="#F7F7F7")
+    draw_box(ax, (0.58, 0.36), (0.20, 0.16), "Logged outputs\ncell V/I/T/SOC\nspread", fc="#F7F7F7")
+    draw_box(ax, (0.76, 0.10), (0.20, 0.14), "Paper metrics\ntime-to-80\nspread / safety", fc="#EEF2F2")
+
+    draw_arrow(ax, (0.22, 0.78), (0.29, 0.78))
+    draw_arrow(ax, (0.47, 0.78), (0.54, 0.78))
+    draw_arrow(ax, (0.72, 0.78), (0.78, 0.78))
+    draw_arrow(ax, (0.13, 0.70), (0.14, 0.52))
+    draw_arrow(ax, (0.24, 0.44), (0.31, 0.44))
+    draw_arrow(ax, (0.51, 0.44), (0.58, 0.44))
+    draw_arrow(ax, (0.68, 0.70), (0.68, 0.52))
+    draw_arrow(ax, (0.84, 0.70), (0.84, 0.24))
+    draw_arrow(ax, (0.78, 0.44), (0.84, 0.24))
+
+    ax.text(0.38, 0.61, "CSV/MAT bridge", ha="center", va="center", fontsize=7, color="#555555")
+    ax.text(0.68, 0.61, "same initial condition", ha="center", va="center", fontsize=7, color="#555555")
+    ax.text(0.52, 0.25, "validation boundary: qualitative/electrical smoke test,\nnot used to replace UPC quantitative pack results", ha="center", va="center", fontsize=7, color="#555555")
+    ax.set_title("Simulink Pack-Validation Workflow", pad=6)
+    fig.tight_layout()
+    save_figure(fig, out_dir / "fig17_simulink_pack_workflow")
+    plt.close(fig)
+
+
 def main() -> None:
     """Generate all currently available report figures."""
     parser = argparse.ArgumentParser(description="Generate IEEE-style CRAIC2026 report figures")
@@ -442,9 +481,10 @@ def main() -> None:
     fig_sac_training(args.out_dir)
     fig_soh_baseline(args.out_dir)
     copy_existing_figures(args.out_dir)
+    fig_simulink_pack_workflow(args.out_dir)
 
     manifest = {
-        "generated": sorted(path.name for path in args.out_dir.glob("fig*.png")),
+        "generated": sorted(path.relative_to(args.out_dir).as_posix() for path in args.out_dir.rglob("fig*.png")),
         "note": "Figures generated from local CRAIC2026 artifacts; third-party reference images are not included.",
     }
     (args.out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

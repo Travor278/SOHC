@@ -11,7 +11,7 @@
 2. **可信度类图**：世界模型预测 vs 真实、ECM 安全投影、SAC 训练曲线。
 3. **实验结果类图**：单体指标柱状图、SOH baseline 图、W4/W5 已有结果图汇总。
 
-仍缺的是泛化展示类图：Zenodo 6985321 zero-shot、Zenodo 18471156 真实电站定性图。
+泛化展示类图已补齐：Zenodo 6985321 zero-shot、Zenodo 18471156 真实电站定性图。当前主要缺口收敛为 Randomized 动态负载 rollout 指标复核和 BatteryML Mamba-head SOH 对比。
 
 外部 Simulink / 电路图已经拉取到 `external_refs/simulink_balance/`，但只能做参考，不能作为本项目论文结果图。
 
@@ -41,6 +41,9 @@
 | ECM 安全投影图 | `paper_figures/fig05_ecm_safety_projection.png` | 高 SOC 下限流防过压 |
 | SAC 训练曲线 | `paper_figures/fig06_sac_training_curve.png` | episode return 与 critic loss |
 | SOH baseline 图 | `paper_figures/fig07_soh_baseline.png` | 验证集 scatter + 代表 cell 曲线 |
+| Zenodo 6985321 zero-shot 图 | `paper_figures/zenodo_6985321/fig15_zenodo_6985321_zero_shot.png` | 跨数据集 SOC/SOH 诊断 |
+| Zenodo 18471156 电站定性图 | `paper_figures/zenodo_18471156/fig16_zenodo_18471156_station_demo.png` | 真实电站 V/I/T + SOC/consistency 输出 |
+| Simulink pack workflow | `paper_figures/fig17_simulink_pack_workflow.png` | Python pack 轨迹到 Simulink 资产接口流程 |
 
 ## 3. 缺失图像
 
@@ -54,10 +57,10 @@
 | P1 | SOH 预测 vs 真实 | 证明 W1 SOH baseline | 已生成 | `paper_figures/fig07_soh_baseline.png` |
 | P1 | 数据集流向图 | 解释 NASA / LG / UPC / Zenodo 各自用途 | 已生成 | `paper_figures/fig02_data_flow.png` |
 | P2 | Randomized 动态负载外推图 | 证明动态负载泛化 | 指标记录存在版本差异 | 先复核 Randomized rollout，再画 profile 与误差曲线 |
-| P2 | Zenodo 6985321 zero-shot 曲线 | W5 定量泛化 | 任务未完成 | 按 OCV-SOC 表重建标签后画 SOC/SOH |
-| P2 | Zenodo 18471156 定性图 | 真实电站展示 | 数据未下载 | 下载后跑 inference，画 V/I/T + SOC/SOH |
+| P2 | Zenodo 6985321 zero-shot 曲线 | W5 定量泛化诊断 | 已生成；SOC zero-shot 误差较高 | `paper_figures/zenodo_6985321/fig15_zenodo_6985321_zero_shot.png` |
+| P2 | Zenodo 18471156 定性图 | 真实电站展示 | 已生成；无标签，仅定性 | `paper_figures/zenodo_18471156/fig16_zenodo_18471156_station_demo.png` |
 | P2 | BatteryML Mamba-head SOH 对比图 | 架构创新点补强 | 任务未完成 | 实现 Mamba feature/head 后画 SOH 对比表 |
-| P3 | Simulink 接口流程图 | 说明已有 pack 资产如何接入 | 只有 workflow 文档 | 用 `SIMULINK_PACK_WORKFLOW.md` 画流程图 |
+| P3 | Simulink 接口流程图 | 说明已有 pack 资产如何接入 | 已生成 | `paper_figures/fig17_simulink_pack_workflow.png` |
 
 ## 4. 不应直接使用的图
 
@@ -89,9 +92,8 @@ outputs/paper_figures/randomized_rollout/
 
 本轮已完成最关键的主链路图。下一步推荐补：
 
-1. `fig15_zenodo_6985321_zero_shot.png`
-2. `fig16_zenodo_18471156_station_demo.png`
-3. `fig17_randomized_rollout_recheck.png`
-4. `fig18_simulink_pack_workflow.png`
+1. `fig18_randomized_rollout_recheck.png`
+2. `fig19_batteryml_mamba_soh_ablation.png`
+3. 按报告最终模板导出 PDF / PPT 版本图。
 
-其中前两张属于泛化与答辩加分项；第三张用于修正 Randomized 动态负载指标口径；第四张用于说明后续 Simulink 接口流程。
+其中第一张用于修正 Randomized 动态负载指标口径；第二张用于补强 SOH 架构创新点。
