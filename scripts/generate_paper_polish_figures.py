@@ -11,6 +11,8 @@ from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from matplotlib.patches import FancyBboxPatch, Rectangle
 
 
@@ -200,6 +202,125 @@ def fig_results_dashboard() -> None:
     plt.close(fig)
 
 
+def fig_single_cell_trajectory_polished() -> None:
+    """Create a cleaner W4 trajectory figure with direct evidence annotations."""
+    traj = pd.read_csv("outputs/eval_w4_final_default/trajectories.csv")
+    metrics = pd.read_csv("outputs/eval_w4_final_default/metrics_by_episode.csv")
+    episode = 0
+    names = {"cc_cv": "CC-CV", "mfcc": "MFCC", "ours": "SAC"}
+    colors = {"cc_cv": "#6B6B6B", "mfcc": "#D9822B", "ours": "#1F77B4"}
+    fields = [
+        ("current_A", "Current (A)", "Charging current"),
+        ("voltage", "Voltage (V)", "Terminal voltage"),
+        ("soc", "SOC (%)", "SOC trajectory"),
+        ("temperature", "Temperature (deg C)", "Temperature"),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(7.4, 4.4), sharex=True)
+    for ax, (field, ylabel, title) in zip(axes.flat, fields):
+        for strategy in ["cc_cv", "mfcc", "ours"]:
+            part = traj[(traj["episode"] == episode) & (traj["strategy"] == strategy)].copy()
+            if part.empty:
+                continue
+            y = part[field].to_numpy(dtype=float)
+            if field == "soc":
+                y = y * 100.0
+            ax.plot(part["time_s"], y, color=colors[strategy], lw=1.5, label=names[strategy])
+        if field == "voltage":
+            ax.axhline(4.2, color="#303030", linestyle=":", lw=0.8)
+            ax.text(0.98, 0.90, "4.2 V safety limit", transform=ax.transAxes, ha="right", va="center", fontsize=7)
+        if field == "soc":
+            ax.axhline(80, color="#303030", linestyle=":", lw=0.8)
+            label_y = {"ours": 82.0, "cc_cv": 86.0}
+            for strategy in ["ours", "cc_cv"]:
+                row = metrics[(metrics["episode"] == episode) & (metrics["strategy"] == strategy)]
+                if not row.empty and np.isfinite(float(row["time_to_80_s"].iloc[0])):
+                    t_hit = float(row["time_to_80_s"].iloc[0])
+                    ax.axvline(t_hit, color=colors[strategy], linestyle="--", lw=0.8, alpha=0.75)
+                    ax.text(t_hit, label_y[strategy], f"{names[strategy]} {t_hit:.0f}s", color=colors[strategy], fontsize=7, ha="center")
+            ax.set_ylim(12, 90)
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+    axes[1, 0].set_xlabel("Time (s)")
+    axes[1, 1].set_xlabel("Time (s)")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.50, 0.925))
+    fig.suptitle("Single-cell fast-charging trajectories, representative paired episode", y=0.99, fontsize=11, weight="bold")
+    fig.text(0.52, 0.02, "SAC reaches 80% earlier while the ECM safety layer keeps terminal voltage at or below the limit.", ha="center", fontsize=7.5)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.93), w_pad=1.2, h_pad=1.4)
+    save(fig, "fig09_charging_comparison_polished")
+    plt.close(fig)
+
+
+def fig_pack_trajectory_polished() -> None:
+    """Create a cleaner W5 6S1P paired-pack comparison figure."""
+    traj = pd.read_csv("outputs/eval_pack_6s1p_h1200/pack_trajectories.csv")
+    metrics = pd.read_csv("outputs/eval_pack_6s1p_h1200/pack_metrics_by_episode.csv")
+    episode = 2
+    names = {"cc_cv": "CC-CV", "mfcc": "MFCC", "ours": "SAC"}
+    colors = {"cc_cv": "#6B6B6B", "mfcc": "#D9822B", "ours": "#1F77B4"}
+
+    # Keep one pack-level row per time step; per-cell rows duplicate pack columns.
+    pack = traj[traj["episode"] == episode].drop_duplicates(["strategy", "step"]).copy()
+    fig, axes = plt.subplots(2, 2, figsize=(7.4, 4.4), sharex=True)
+    panels = [
+        ("soc_min", "Min-cell SOC (%)", "Pack target variable"),
+        ("soc_spread", "SOC spread (%)", "Cell-to-cell imbalance"),
+        ("current_A", "Mean cell current (A)", "Mean charging current"),
+        ("temperature_max", "Max temperature (deg C)", "Thermal envelope"),
+    ]
+    for ax, (field, ylabel, title) in zip(axes.flat, panels):
+        for strategy in ["cc_cv", "mfcc", "ours"]:
+            part = pack[pack["strategy"] == strategy].sort_values("time_s")
+            if part.empty:
+                continue
+            if field == "current_A":
+                y = (
+                    traj[(traj["episode"] == episode) & (traj["strategy"] == strategy)]
+                    .groupby("time_s")["current_A"]
+                    .mean()
+                    .to_numpy(dtype=float)
+                )
+                x = (
+                    traj[(traj["episode"] == episode) & (traj["strategy"] == strategy)]
+                    .groupby("time_s")["current_A"]
+                    .mean()
+                    .index.to_numpy(dtype=float)
+                )
+            else:
+                x = part["time_s"].to_numpy(dtype=float)
+                y = part[field].to_numpy(dtype=float)
+                if field in {"soc_min", "soc_spread"}:
+                    y = y * 100.0
+            ax.plot(x, y, color=colors[strategy], lw=1.5, label=names[strategy])
+        if field == "soc_min":
+            ax.axhline(80, color="#303030", linestyle=":", lw=0.8)
+            label_y = {"ours": 82.0, "cc_cv": 86.0}
+            for strategy in ["ours", "cc_cv"]:
+                row = metrics[(metrics["episode"] == episode) & (metrics["strategy"] == strategy)]
+                if not row.empty and np.isfinite(float(row["time_to_target_s"].iloc[0])):
+                    t_hit = float(row["time_to_target_s"].iloc[0])
+                    ax.axvline(t_hit, color=colors[strategy], linestyle="--", lw=0.8, alpha=0.75)
+                    ax.text(t_hit, label_y[strategy], f"{names[strategy]} {t_hit:.0f}s", color=colors[strategy], fontsize=7, ha="center")
+            ax.set_ylim(16, 90)
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+    axes[1, 0].set_xlabel("Time (s)")
+    axes[1, 1].set_xlabel("Time (s)")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.50, 0.925))
+    fig.suptitle("6S1P policy replication with SOC-spread balancing, paired episode", y=0.99, fontsize=11, weight="bold")
+    fig.text(0.52, 0.02, "Pack-level stopping uses the weakest cell; SAC reaches the min-cell target earlier and lowers final spread.", ha="center", fontsize=7.5)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.93), w_pad=1.2, h_pad=1.4)
+    save(fig, "fig10_pack_comparison_polished")
+    plt.close(fig)
+
+
 def update_manifest() -> None:
     """Refresh the paper figure manifest with all figure PNG files."""
     manifest = {
@@ -214,6 +335,8 @@ def main() -> None:
     set_style()
     fig_graphical_abstract()
     fig_results_dashboard()
+    fig_single_cell_trajectory_polished()
+    fig_pack_trajectory_polished()
     update_manifest()
     print(json.dumps(json.loads((OUT_DIR / "manifest.json").read_text(encoding="utf-8")), indent=2))
 

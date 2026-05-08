@@ -15,8 +15,8 @@
 | 图 6 | `paper_figures/fig05_ecm_safety_projection.png` | 高 SOC 条件下 ECM 安全层对充电电流的电压约束投影。 | L3 安全层保证动作物理安全。 | 参数来自 legacy 二阶 ECM，需要后续电芯级标定。 |
 | 图 7 | `paper_figures/fig06_sac_training_curve.png` | SAC 训练过程中的 episode return 与 critic loss。 | reward sweep 后策略可学习稳定行为。 | return 不是严格单调。 |
 | 图 8 | `paper_figures/fig04_w4_metrics_bar.png` | 单体 paired episodes 中 SAC 与 CC-CV 的充电时间和 ΔSOH 对比。 | W4 核心结论：更快且更少老化。 | paired 口径需说明。 |
-| 图 9 | `paper_figures/fig09_charging_comparison.png` | SAC、CC-CV 与 MFCC 的 I/V/SOC/T 轨迹对比。 | SAC 形成动态电流轨迹，实际过压为 0。 | 轨迹来自世界模型环境。 |
-| 图 10 | `paper_figures/fig10_pack_comparison.png` | 6S1P 包级策略复制与 SOC-spread 均衡协调结果。 | 单体策略可复制到 pack，并改善 min-cell 到达目标速度。 | 仍是 Python supervisory simulator。 |
+| 图 9 | `paper_figures/fig09_charging_comparison_polished.png` | SAC、CC-CV 与 MFCC 的 I/V/SOC/T 轨迹对比。 | SAC 形成动态电流轨迹，423 s 达到 80% SOC，且电压保持在 4.2 V 安全线内。 | 轨迹来自世界模型环境。 |
+| 图 10 | `paper_figures/fig10_pack_comparison_polished.png` | 6S1P 包级策略复制与 SOC-spread 均衡协调结果。 | 单体策略复制到 pack 后，SAC 在 paired episode 中更早达到 min-cell 80% 目标并降低末端 spread。 | 仍是 Python supervisory simulator。 |
 | 图 11 | `paper_figures/fig11_active_balancer_topology.png` | 本项目重画的主动 buck-boost 均衡协调拓扑示意。 | 说明均衡控制逻辑和 per-cell 电流修正。 | 不是开关级 PWM/器件模型。 |
 | 图 12 | `paper_figures/fig12_upc_measured_profile.png` | UPC 36-cell pack 在 WLTP 工况下的实测电压、电流和 SOC profile。 | 真实 pack voltage spread 显著，说明包级问题真实存在。 | UPC 温度列有异常占位，分析使用有效温度范围。 |
 | 图 13 | `paper_figures/fig13_upc_real_balancing_semicycle.png` | UPC 真实 balancing semicycle 中 cell voltage spread 的动态变化。 | 真实 balancing spread 不一定单调下降。 | 不能截取局部片段夸大效果。 |
