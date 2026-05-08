@@ -6,6 +6,24 @@
 
 注意：仓库自带 `batterpack.slx` / `buck_boost_balance.slx` 来源未知，因此只作可选接口演示。论文定量验证优先使用 UPC 36-cell pack 数据。
 
+## 0. 最契合的外部 Simulink / 拓扑参考
+
+这些参考只用于说明拓扑和仿真流程，**不直接借用对方结果图作为本项目结果**。
+
+| 参考 | 类型 | 和本项目的关系 | 用法 |
+|---|---|---|---|
+| MathWorks Battery Pack Cell Balancing | 官方 Simscape Electrical 示例 | 提供 pack cell balancing、series/parallel 参数、初始 SOC/温度、Simscape logging 的可信流程 | 作为 Simulink 数据回放/日志接口参考 |
+| MathWorks Simscape Battery Cell Balancing | 官方 Simscape Battery 示例集合 | 提供 cell balancing 示例入口，适合作为建模规范参考 | 作为 workflow 参考，不作为主动 buck-boost 结果 |
+| `yavuzhanocak/Single-switch-capacitor-battery-balance` | GitHub 开源 Simulink + Altium | 含 active balancing、bidirectional converter、4-cell module 短仿真，最贴近“短仿真演示” | 只借鉴拓扑/控制思路，不借用结果图 |
+| “A modularized active cell balancing ... buck-boost converter ... EV applications” | 2025 论文 | buck-boost 主动均衡、MATLAB/Simulink、静态/充电/放电模式 | 作为 active buck-boost 方向引用 |
+
+链接：
+
+- https://www.mathworks.com/help/sps/ug/lithium-pack-cell-balancing.html
+- https://www.mathworks.com/help/simscape-battery/cell-balancing.html
+- https://github.com/yavuzhanocak/Single-switch-capacitor-battery-balance
+- https://doi.org/10.1016/j.compeleceng.2025.110736
+
 ## 1. 推荐仿真分三层做
 
 ### A. 数据回放校准

@@ -72,6 +72,7 @@ W5: 多单体 / 包级扩展
 | `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估与画图 |
 | `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 均衡、包级指标与画图 |
 | `craic_pipeline/pack_dataset_upc.py` | 已实现 | UPC 36-cell pack Parquet 加载、summary、Simulink CSV 导出 |
+| `craic_pipeline/eval_upc_pack.py` | 已实现 | UPC 真实数据论文图表 + Python active buck-boost 短仿真 |
 
 ## 3.1 W1 主要算法
 
@@ -403,6 +404,15 @@ W3 环境每一步执行：
   - 最大 cell voltage spread 约 `1312 mV`
 - UPC 温度列存在约 650°C 级占位/异常值；当前 summary 保留 `temperature_max_raw_C`，并额外使用 `-40~120°C` 有效温度分位数做分析。
 - `SIMULINK_PACK_WORKFLOW.md` 已说明已有 pack 资产时的数据回放、策略闭环和 balancing on/off paired test 流程。
+- `PAPER_UPC_PACK_RESULTS.md` 已整理 UPC 包级论文结果：
+  - Cycle 003 WLTP 平均 spread `244.56 mV`，P95 `510.00 mV`，最大 `590.00 mV`
+  - Cycle 027 real balancing semicycle 起点 `308.00 mV`，段内最小 `127.00 mV`，终点 `308.00 mV`
+  - Python active buck-boost 短仿真 `622.00 mV -> 334.00 mV`，降幅 `46.30%`
+- 本地效果图输出在 `outputs/upc_pack_paper/`：
+  - `fig_active_balancer_topology.png`
+  - `fig_upc_measured_profile.png`
+  - `fig_upc_real_balancing_semicycle.png`
+  - `fig_python_balancing_short_sim.png`
 
 ### 电流符号
 

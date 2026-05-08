@@ -113,6 +113,7 @@
 - [x] 写 `craic_pipeline/pack_dataset_upc.py`：解析 UPC pack Parquet 到统一接口
 - [x] 在 UPC 36-cell pack 上评估 cell voltage spread / balancing semicycle / pack safety
 - [x] 写 `SIMULINK_PACK_WORKFLOW.md`：已有 pack 资产时的数据回放 / 策略闭环 / 均衡电路仿真流程
+- [x] 输出 UPC 论文式包级结果与效果图：`outputs/upc_pack_paper/` + `PAPER_UPC_PACK_RESULTS.md`
 - [ ] （可选）Simulink 30 模组：仅作接口演示，不作为论文定量依据
 - [ ] （可选）BattGP 8S LFP field data：弱单体/异常/电压 spread 定性图
 - [ ] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量** L3）
@@ -159,6 +160,7 @@
 - 2026-05-08 W5 pack prototype：新增 `craic_pipeline/pack_balance.py`，默认 `6S1P`，支持 `30S1P` CLI；仿照 liionpack 的“单体模型扩成 series/parallel pack”思想，但不引入 PyBaMM 大依赖。当前 `outputs/eval_pack_6s1p_h1200/` 结果：SAC hit_rate 3/3，CC-CV 1/3，MFCC 0/3；paired episode 上 SAC vs CC-CV 充电时间 1121s → 668s（快 40.41%）、平均 ΔSOH 降 23.01%、末端 SOC spread 降 28.00%、实际过压 0。`outputs/eval_pack_30s1p_smoke/` 已完成 30S1P 短烟测，三策略 120 step 均无实际过压，可作为 Simulink 30 模组对接入口。
 - 2026-05-08 W5 数据源调整：仓库自带 `batterpack.slx` / `buck_boost_balance.slx` / `Rebattery_Modeling-master/` 来源与参数依据不明，后续只作可选接口演示；包级定量验证改用可信公开数据。首选 UPC 36-cell pack WLTP+CC-CV 数据集（Scientific Data 2025，DOI `10.1038/s41597-025-06229-5`，数据 DOI `10.34810/DATA2395`，12S3P、36 cell voltage、3 branch current、72 cell temperature、BMS SOC、balancing semicycle）。BattGP 8S LFP field data（Zenodo `10.5281/zenodo.13715694`）作为真实服役弱单体/异常补充。
 - 2026-05-08 W5 UPC loader：`scripts/download_upc_pack.py` 已通过 Dataverse API 下载并 MD5 校验 UPC 全量 `412/412` 文件（410 个 Parquet，约 1.32GB，本地忽略不提交）；`craic_pipeline/pack_dataset_upc.py` 支持单 cycle 加载、目录 summary、`12S3P` 原生数组、36-cell flatten、Simulink 宽 CSV 导出。全量 downsample=100 summary 输出 `outputs/upc_pack_summary_full.csv`：410 cycles（295 WLTP / 115 Capacity_check），3 个 cycle 含 Balancing semicycle，平均 cell voltage spread 约 69.34 mV，最大 spread 约 1312 mV。UPC 原始温度存在约 650°C 占位/异常值，summary 同时输出有效温度分位数和 valid fraction。
+- 2026-05-08 W5 UPC paper figures：新增 `craic_pipeline/eval_upc_pack.py` 和 `PAPER_UPC_PACK_RESULTS.md`，生成 `outputs/upc_pack_paper/fig_active_balancer_topology.png`、`fig_upc_measured_profile.png`、`fig_upc_real_balancing_semicycle.png`、`fig_python_balancing_short_sim.png`。实测 Cycle 003 WLTP：平均 spread 244.56 mV、P95 510.00 mV、最大 590.00 mV。Cycle 027 real balancing semicycle：起点 308.00 mV、段内最小 127.00 mV、终点 308.00 mV。Python active buck-boost 短仿真从 UPC 高 spread 样本初始化，30 min 内将 spread 622.00 mV → 334.00 mV（降 46.30%），max balance current 0.80 A。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
