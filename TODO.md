@@ -99,7 +99,7 @@
 - [x] 计算指标表：充至 80% 耗时、ΔSOH 单循环、过压报警次数、平均 T
 - [x] 画 4 联子图（I/V/SOC/T over t），各策略叠加
 - [x] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
-- [ ] 在 BatteryML 里挂 Mamba head 跑一版 SOH，加进对比表（架构创新点）
+- [x] 在 BatteryML-compatible SOH 流程里挂 Mamba embedding head 跑一版 SOH，加进对比表（架构创新点；external BatteryML trainer 尚未接入）
 - [x] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建 SOC/SOH 参考标签
 - [x] 在 Zenodo 6985321 上跑 zero-shot SOC/SOH inference（W5 定量诊断输入）
 
@@ -168,6 +168,7 @@
 - 2026-05-08 Zenodo 6985321：新增 `craic_pipeline/zenodo_zero_shot.py`，用配套 OCV/SOC 端点思想重建 SOC/SOH 参考并跑 W1 LSTM zero-shot。输出 `paper_figures/zenodo_6985321/fig15_zenodo_6985321_zero_shot.png`。fresh/aged SOC MAE 分别为 `16.11%` / `14.03%`，说明跨尺度迁移仍是短板；半循环 throughput SOH 中位数 fresh `98.02%`、aged `81.23%`，aged 与参考 `83.2%` 接近。
 - 2026-05-08 Zenodo 18471156：已下载并校验 `BatteryData.zip`（MD5 `c28d865877bdacf1cdc16130f4b73cfe`），解压出 `600` 个 CSV。该数据无 SOC/SOH/容量标签，只能定性展示；新增 `craic_pipeline/station_demo_18471156.py`，输出 `paper_figures/zenodo_18471156/fig16_zenodo_18471156_station_demo.png`。图中 SOC 为 W1 LSTM 定性输出，SOH 改为 voltage/temp spread consistency proxy，不能作为 SOH 定量结论。
 - 2026-05-08 Simulink workflow：新增 `paper_figures/fig17_simulink_pack_workflow.png`，明确 Python pack 策略轨迹如何通过 CSV/MAT bridge 接入 Simulink 30 模组和 buck-boost balancing on/off paired test；仍只作接口/电路烟测流程，不替代 UPC 定量包级结果。
+- 2026-05-08 SOH Mamba-head ablation：新增 `craic_pipeline/soh_mamba_head.py` 和 `SOH_MAMBA_HEAD_RESULTS.md`。在 B0005/B0006/B0007 → B0018 上，SOH 通道置中后，physical stats Ridge 为 RMSE `3.18%` / MAE `1.71%`，Mamba embedding Ridge 为 RMSE `2.87%` / MAE `1.18%`。结论：Mamba 表征有增益，但未达 `<2% RMSE`，也尚未接入 external BatteryML trainer。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。

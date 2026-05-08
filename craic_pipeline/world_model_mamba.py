@@ -77,13 +77,8 @@ class BatteryWorldModel(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Predict `[SOC_next, V_next, T_next, delta_SOH]` from `(B,L,6)`."""
-        h = self.input_proj(x.float())
-        if self.backend == "mamba":
-            for norm, layer in zip(self.norms, self.layers):
-                h = h + layer(norm(h))
-        else:
-            h, _ = self.layers(h)
-        raw = self.head(h[:, -1])
+        h_last = self.encode(x)
+        raw = self.head(h_last)
         if not self.cfg.residual_head:
             return raw
         last = x[:, -1].float()
@@ -96,6 +91,16 @@ class BatteryWorldModel(nn.Module):
             ],
             dim=-1,
         )
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        """Return the last hidden sequence embedding before the prediction head."""
+        h = self.input_proj(x.float())
+        if self.backend == "mamba":
+            for norm, layer in zip(self.norms, self.layers):
+                h = h + layer(norm(h))
+        else:
+            h, _ = self.layers(h)
+        return h[:, -1]
 
     @torch.no_grad()
     def step(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:

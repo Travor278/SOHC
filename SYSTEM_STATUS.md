@@ -75,6 +75,7 @@ W5: 多单体 / 包级扩展
 | `craic_pipeline/eval_upc_pack.py` | 已实现 | UPC 真实数据论文图表 + Python active buck-boost 短仿真 |
 | `craic_pipeline/zenodo_zero_shot.py` | 已实现 | Zenodo 6985321 fresh/aged cell zero-shot SOC/SOH 诊断 |
 | `craic_pipeline/station_demo_18471156.py` | 已实现 | Zenodo 18471156 真实电站定性展示图 |
+| `craic_pipeline/soh_mamba_head.py` | 已实现 | W2 Mamba embedding + Ridge head 的 SOH 架构 ablation |
 
 ## 3.1 W1 主要算法
 
@@ -318,6 +319,7 @@ W3 环境每一步执行：
 
 - NASA holdout RMSE 满足 `<2%`。
 - 但该 SOH baseline 依赖 NASA `Capacity` 字段构造 ratio，更适合作软标签和一致性验证，不代表真实部署时无容量标签能力。
+- Mamba-head ablation 已完成：在 SOH 通道置中、B0005/B0006/B0007 → B0018 划分下，Mamba embedding Ridge 的 RMSE/MAE 为 `2.87%` / `1.18%`，优于 physical stats Ridge 的 `3.18%` / `1.71%`，但尚未达到 `<2% RMSE`。
 
 ### Mamba 世界模型
 
@@ -486,8 +488,9 @@ aging = 120
    - 核心百分比使用“同初始条件且双方都到 80%”的 paired episodes。
    - 全量 summary 同时保留 hit_rate 和 soc_end_mean。
 
-4. BatteryML Mamba-head SOH 尚未做。
-   - 这是 W4 剩余的架构创新点展示项。
+4. BatteryML Mamba-head SOH 已完成轻量 ablation，但仍需加强。
+   - 当前是 BatteryML-compatible 目标 + W2 Mamba embedding + Ridge head。
+   - 尚未接入 external BatteryML trainer，也未达到 `<2% RMSE`。
 
 5. Zenodo 6985321 zero-shot 已完成但 SOC 精度不足。
    - fresh/aged SOC MAE 分别为 `16.11%` / `14.03%`。
@@ -509,14 +512,14 @@ aging = 120
 2. 建议用 `stride=512/1024` 补齐 28 个 RW 文件，降低运行时长。
 3. 输出 `paper_figures/fig18_randomized_rollout_recheck.png`，再决定正文是否写 20-step 动态负载指标。
 
-### B. 补 W4 剩余创新点
+### B. 继续加强 SOH Mamba-head
 
-1. 在 BatteryML-compatible SOH 流程里接 Mamba world-model features/head。
-2. 输出一张 SOH 对比表：
-   - capacity-ratio baseline
-   - variance/Ridge baseline
-   - Mamba feature/head variant
-3. 目标不是重新大幅提升 RMSE，而是形成“BatteryML 内挂 Mamba head”的架构创新证据。
+1. 当前轻量对比表已完成，见 `SOH_MAMBA_HEAD_RESULTS.md`。
+2. 下一步可尝试：
+   - 更严格的 cycle-level split / cell-level feature aggregation。
+   - 用 shallow MLP/Huber loss 替代 Ridge head。
+   - 真正接入 external BatteryML trainer。
+3. 目标是把 Mamba-head 从“有增益的 ablation”推进到 `<2% RMSE` 或更有说服力的架构对比。
 
 ### C. 补泛化与展示的可信边界
 
@@ -550,11 +553,11 @@ aging = 120
 最建议现在做：
 
 ```text
-复核 Randomized 20-step rollout 指标，并补 BatteryML Mamba-head SOH 对比。
+复核 Randomized 20-step rollout 指标，并加强 BatteryML/Mamba-head SOH 对比。
 ```
 
 原因：
 
 - 主链路、包级 UPC、Zenodo 展示图都已具备。
 - 当前最影响论文严谨性的剩余项是 Randomized 指标口径不一致。
-- BatteryML Mamba-head SOH 是架构创新补强项，适合放在最终版本对比表中。
+- Mamba-head SOH 轻量版已补齐，但仍可继续优化到更像正式 BatteryML trainer 的实验。
