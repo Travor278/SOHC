@@ -9,6 +9,7 @@ from craic_pipeline.world_model_mamba import (
     WorldModelConfig,
     build_world_tensors,
     evaluate_rollout_drift,
+    evaluate_randomized_directory,
     load_world_tensors,
     save_world_tensors,
     split_bundle_by_cell,
@@ -152,4 +153,38 @@ def test_build_world_tensors_reuses_file_shard_cache(tmp_path):
     second = build_world_tensors(pcoe, randomized, seq_len=3, stride=1, cache_dir=cache, use_soc_model=False)
 
     assert first["X"].shape == second["X"].shape
+    assert list(cache.rglob("*.pt"))
+
+
+def test_evaluate_randomized_directory_streams_file_shards(tmp_path):
+    """Full Randomized evaluator streams one file shard without concatenating all data."""
+    randomized = tmp_path / "Randomized"
+    cache = tmp_path / "cache"
+    randomized.mkdir()
+    cycle = {
+        "data": {
+            "Voltage_measured": np.linspace(3.8, 3.9, 14),
+            "Current_measured": np.full(14, 1.0),
+            "Temperature_measured": np.linspace(25.0, 25.2, 14),
+            "Time": np.arange(14, dtype=float),
+        }
+    }
+    savemat(randomized / "RW1.mat", {"RW1": {"cycle": np.array([cycle], dtype=object)}})
+    model = BatteryWorldModel(WorldModelConfig(hidden_dim=8, n_layers=1, seq_len=4, use_mamba=False))
+
+    report = evaluate_randomized_directory(
+        model,
+        randomized,
+        cache_dir=cache,
+        seq_len=4,
+        stride=2,
+        rollout_horizon=2,
+        rollout_stride=3,
+        device="cpu",
+    )
+
+    assert report["files_total"] == 1
+    assert report["files_evaluated"] == 1
+    assert report["one_step_samples"] > 0
+    assert np.isfinite(report["one_step"]["voltage_mae_mV"])
     assert list(cache.rglob("*.pt"))

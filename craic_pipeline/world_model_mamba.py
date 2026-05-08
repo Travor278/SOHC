@@ -429,11 +429,12 @@ def evaluate_rollout_drift(
                 pred = model(hist).squeeze(0).detach()
                 future_row = features[start + seq_len + step_idx]
                 errors_mV.append(abs(float(pred[1].detach().cpu()) - float(future_row[2])) * 1000.0)
+                next_current = float(future_row[3])
                 next_action = float(future_row[5])
                 delta_soh = max(float(pred[3].detach().cpu()), 0.0)
                 pred_soh = float(np.clip(pred_soh - delta_soh, 0.0, 1.2))
                 next_feature = torch.tensor(
-                    [[float(pred[0].clamp(0.0, 1.0)), pred_soh, float(pred[1]), next_action, float(pred[2]), next_action]],
+                    [[float(pred[0].clamp(0.0, 1.0)), pred_soh, float(pred[1]), next_current, float(pred[2]), next_action]],
                     dtype=hist.dtype,
                     device=device,
                 )
@@ -454,6 +455,198 @@ def evaluate_rollout_drift(
         "cells": sorted(cell_filter) if cell_filter else None,
         "subsets": sorted(subset_filter) if subset_filter else None,
     }
+
+
+@torch.no_grad()
+def evaluate_randomized_directory(
+    model: BatteryWorldModel,
+    randomized_dir: Path,
+    *,
+    cache_dir: Path,
+    seq_len: int = 64,
+    stride: int = 64,
+    batch_size: int = 1024,
+    rollout_horizon: int = 20,
+    rollout_stride: int = 256,
+    max_files: int | None = None,
+    device: torch.device | str | None = None,
+) -> dict:
+    """Evaluate W2 on every NASA Randomized `.mat` file using cached shards.
+
+    Args:
+        model: Trained W2 world model.
+        randomized_dir: NASA Randomized root with RW `.mat` files.
+        cache_dir: Per-file shard cache directory.
+        seq_len: History length used for shard windows.
+        stride: Window stride used when building missing shards.
+        batch_size: One-step evaluation batch size.
+        rollout_horizon: Open-loop rollout horizon.
+        rollout_stride: Trace stride used for rollout sampling.
+        max_files: Optional debug cap; `None` means all `.mat` files.
+        device: Torch device.
+
+    Returns:
+        JSON-serializable metrics covering all evaluated Randomized files.
+    """
+    device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    model = model.to(device)
+    model.eval()
+    files = sorted(_mat_files(Path(randomized_dir)), key=lambda item: item.stat().st_size)
+    if max_files is not None:
+        files = files[:max_files]
+    one_step = _empty_error_accumulator()
+    rollout_errors_mV: list[float] = []
+    file_rows = []
+    for file_path in files:
+        shard = _load_or_build_file_shard(
+            file_path,
+            subset="randomized",
+            loader=load_randomized_usage,
+            soc_model=None,
+            soc_window=None,
+            seq_len=seq_len,
+            stride=stride,
+            cache_dir=cache_dir,
+        )
+        if shard is None:
+            file_rows.append({"file": file_path.stem, "status": "empty"})
+            continue
+        file_one_step = _one_step_error_accumulator(
+            model,
+            shard["X"],
+            shard["y"],
+            batch_size=batch_size,
+            device=device,
+        )
+        _merge_error_accumulator(one_step, file_one_step)
+        file_rollout = _rollout_errors_from_traces(
+            model,
+            shard.get("traces", []),
+            seq_len=seq_len,
+            horizon=rollout_horizon,
+            stride=rollout_stride,
+            device=device,
+        )
+        rollout_errors_mV.extend(file_rollout)
+        file_rows.append(
+            {
+                "file": file_path.stem,
+                "status": "ok",
+                "windows": int(len(shard["y"])),
+                "traces": int(len(shard.get("traces", []))),
+                "one_step_voltage_mae_mV": _safe_div(file_one_step["voltage_abs_sum"], file_one_step["count"])
+                * 1000.0,
+                "rollout_errors": int(len(file_rollout)),
+                "rollout_voltage_mae_mV": float(np.mean(file_rollout)) if file_rollout else np.nan,
+            }
+        )
+    one_count = int(one_step["count"])
+    rollout_count = int(len(rollout_errors_mV))
+    return {
+        "subset": "randomized_full",
+        "files_total": int(len(files)),
+        "files_evaluated": int(sum(row["status"] == "ok" for row in file_rows)),
+        "seq_len": int(seq_len),
+        "stride": int(stride),
+        "batch_size": int(batch_size),
+        "one_step_samples": one_count,
+        "one_step": {
+            "soc_mae_percent": _safe_div(one_step["soc_abs_sum"], one_count) * 100.0,
+            "voltage_mae_mV": _safe_div(one_step["voltage_abs_sum"], one_count) * 1000.0,
+            "temperature_mae_C": _safe_div(one_step["temperature_abs_sum"], one_count),
+            "delta_soh_mae_percent": _safe_div(one_step["delta_soh_abs_sum"], one_count) * 100.0,
+        },
+        "rollout": {
+            "horizon": int(rollout_horizon),
+            "stride": int(rollout_stride),
+            "errors": rollout_count,
+            "voltage_mae_mV": float(np.mean(rollout_errors_mV)) if rollout_errors_mV else np.nan,
+            "voltage_p95_mV": float(np.percentile(rollout_errors_mV, 95)) if rollout_errors_mV else np.nan,
+        },
+        "files": file_rows,
+    }
+
+
+def _empty_error_accumulator() -> dict:
+    """Create an accumulator for one-step absolute errors."""
+    return {
+        "count": 0,
+        "soc_abs_sum": 0.0,
+        "voltage_abs_sum": 0.0,
+        "temperature_abs_sum": 0.0,
+        "delta_soh_abs_sum": 0.0,
+    }
+
+
+@torch.no_grad()
+def _one_step_error_accumulator(
+    model: BatteryWorldModel,
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    batch_size: int,
+    device: torch.device,
+) -> dict:
+    """Accumulate one-step W2 absolute errors without materializing predictions."""
+    stats = _empty_error_accumulator()
+    dataset = TensorDataset(torch.from_numpy(np.asarray(X)).float(), torch.from_numpy(np.asarray(y)).float())
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    for X_batch, y_batch in loader:
+        pred = model(X_batch.to(device)).detach().cpu()
+        target = y_batch.detach().cpu()
+        err = (pred - target).abs().numpy()
+        stats["count"] += int(len(err))
+        stats["soc_abs_sum"] += float(err[:, 0].sum())
+        stats["voltage_abs_sum"] += float(err[:, 1].sum())
+        stats["temperature_abs_sum"] += float(err[:, 2].sum())
+        stats["delta_soh_abs_sum"] += float(err[:, 3].sum())
+    return stats
+
+
+def _merge_error_accumulator(total: dict, part: dict) -> None:
+    """Add one one-step error accumulator into another."""
+    for key in total:
+        total[key] += part[key]
+
+
+@torch.no_grad()
+def _rollout_errors_from_traces(
+    model: BatteryWorldModel,
+    traces: list[dict],
+    *,
+    seq_len: int,
+    horizon: int,
+    stride: int,
+    device: torch.device,
+) -> list[float]:
+    """Return sampled rollout voltage errors in mV for a list of traces."""
+    errors_mV: list[float] = []
+    for trace in traces:
+        features = np.asarray(trace["features"], dtype=np.float32)
+        if len(features) <= seq_len + horizon:
+            continue
+        for start in range(0, len(features) - seq_len - horizon, stride):
+            hist = torch.from_numpy(features[start : start + seq_len].copy()).to(device).unsqueeze(0)
+            pred_soh = float(hist[0, -1, 1].detach().cpu())
+            for step_idx in range(horizon):
+                pred = model(hist).squeeze(0).detach()
+                future_row = features[start + seq_len + step_idx]
+                errors_mV.append(abs(float(pred[1].detach().cpu()) - float(future_row[2])) * 1000.0)
+                next_action = float(future_row[5])
+                delta_soh = max(float(pred[3].detach().cpu()), 0.0)
+                pred_soh = float(np.clip(pred_soh - delta_soh, 0.0, 1.2))
+                next_feature = torch.tensor(
+                    [[float(pred[0].clamp(0.0, 1.0)), pred_soh, float(pred[1]), next_action, float(pred[2]), next_action]],
+                    dtype=hist.dtype,
+                    device=device,
+                )
+                hist = torch.cat([hist[:, 1:], next_feature.unsqueeze(0)], dim=1)
+    return errors_mV
+
+
+def _safe_div(value: float, count: int) -> float:
+    """Divide by a positive count, returning NaN for empty accumulators."""
+    return float(value / count) if count else float("nan")
 
 
 def load_world_model_checkpoint(path: Path) -> tuple[BatteryWorldModel, dict]:
@@ -719,16 +912,37 @@ def main() -> None:
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--val-cells", nargs="*", default=None)
     parser.add_argument("--eval-rollout", action="store_true")
+    parser.add_argument("--eval-randomized-full", action="store_true")
     parser.add_argument("--rollout-horizon", type=int, default=20)
     parser.add_argument("--rollout-stride", type=int, default=64)
     parser.add_argument("--max-rollouts", type=int, default=None)
     parser.add_argument("--rollout-cells", nargs="*", default=None)
     parser.add_argument("--rollout-subsets", nargs="*", default=None)
+    parser.add_argument("--randomized-report-out", type=Path, default=Path("outputs/world_model_randomized_full_eval.metrics.json"))
+    parser.add_argument("--randomized-eval-stride", type=int, default=64)
+    parser.add_argument("--randomized-rollout-stride", type=int, default=256)
     parser.add_argument("--gru-fallback", action="store_true", help="Force GRU when mamba-ssm is unavailable")
     parser.add_argument("--build-only", action="store_true", help="Only build and save W2 train tensors")
     args = parser.parse_args()
 
     cfg = WorldModelConfig(seq_len=args.seq_len, use_mamba=not args.gru_fallback)
+    if args.eval_randomized_full:
+        model, _ = load_world_model_checkpoint(args.out)
+        report = evaluate_randomized_directory(
+            model,
+            args.randomized_dir,
+            cache_dir=args.cache_dir or Path("outputs/cache/world_model_randomized_full"),
+            seq_len=args.seq_len,
+            stride=args.randomized_eval_stride,
+            batch_size=args.batch_size,
+            rollout_horizon=args.rollout_horizon,
+            rollout_stride=args.randomized_rollout_stride,
+            max_files=args.limit_randomized_files,
+        )
+        args.randomized_report_out.parent.mkdir(parents=True, exist_ok=True)
+        args.randomized_report_out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(json.dumps(report, indent=2))
+        return
     if args.dataset is not None and args.dataset.exists():
         bundle = load_world_tensors(args.dataset)
     else:
