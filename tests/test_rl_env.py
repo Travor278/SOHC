@@ -80,6 +80,30 @@ def test_compute_reward_penalizes_aging_loss():
     assert terms["aging_penalty"] > 0.0
 
 
+def test_compute_reward_penalizes_raw_voltage_before_l3_clip():
+    """Voltage reward term uses raw world-model voltage, not just clipped observation."""
+    env = _make_env()
+    state = np.array([0.2, 1.0, 3.7, 0.0, 25.0], dtype=np.float32)
+    clipped_next = np.array([0.21, 1.0, env.cfg.V_max, 1.0, 25.0], dtype=np.float32)
+
+    reward_safe, _ = env.compute_reward(state, clipped_next, raw_voltage=env.cfg.V_max)
+    reward_raw_over, terms = env.compute_reward(state, clipped_next, raw_voltage=env.cfg.V_max + 0.1)
+
+    assert reward_raw_over < reward_safe
+    assert terms["voltage_penalty"] > 0.0
+
+
+def test_aging_proxy_increases_with_high_voltage_stress():
+    """W3 aging proxy gives the policy nonzero calendar and stress SOH signals."""
+    env = _make_env()
+
+    low = env._aging_proxy_delta_soh(0.0, raw_voltage=3.9, temperature=25.0)
+    high = env._aging_proxy_delta_soh(4.0, raw_voltage=4.2, temperature=35.0)
+
+    assert high > low
+    assert low > 0.0
+
+
 def test_battery_charging_env_random_1000_steps_has_no_nan():
     """Random-action smoke test keeps the W3 env numerically stable."""
     env = _make_env(max_steps=120)

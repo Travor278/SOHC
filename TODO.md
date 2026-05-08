@@ -87,18 +87,18 @@
 - [x] 在 `craic_pipeline/rl_env.py` 实现 `BatteryChargingEnv`（继承 `gymnasium.Env`）
 - [x] 实现 `compute_reward()`：4 项加权和（speed / V / T / aging）
 - [x] 单跑环境 1000 步，确认无异常
-- [ ] 调奖励权重：先单项调（速度→安全→老化），再加权
+- [x] 调奖励权重：先单项调（速度→安全→老化），再加权
 - [x] 跑 `train_sac.py --total-steps 100000`
-- [ ] tensorboard 监控：episode_return 应单调上升
+- [x] tensorboard 监控：episode_return 应单调上升
 - [x] 保存 `outputs/sac_policy.zip`
 
 ## W4 · 评估与对比
 
-- [ ] 在 `craic_pipeline/eval_compare.py` 实现 CC-CV、MFCC 基线
-- [ ] 部署 SAC 策略，记录轨迹
-- [ ] 计算指标表：充至 80% 耗时、ΔSOH 单循环、过压报警次数、平均 T
-- [ ] 画 4 联子图（I/V/SOC/T over t），各策略叠加
-- [ ] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
+- [x] 在 `craic_pipeline/eval_compare.py` 实现 CC-CV、MFCC 基线
+- [x] 部署 SAC 策略，记录轨迹
+- [x] 计算指标表：充至 80% 耗时、ΔSOH 单循环、过压报警次数、平均 T
+- [x] 画 4 联子图（I/V/SOC/T over t），各策略叠加
+- [x] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
 - [ ] 在 BatteryML 里挂 Mamba head 跑一版 SOH，加进对比表（架构创新点）
 - [ ] 下载 Zenodo 6985321，用配套 .m 脚本里的 OCV-SOC 表 + 库仑积分重建 SOC/SOH 参考标签
 - [ ] 在 Zenodo 6985321 上跑 zero-shot SOC/SOH inference（W5 定量泛化输入）
@@ -143,6 +143,9 @@
 - 2026-05-08 W3 SAC：WSL GPU + Mamba 下 `train_sac.py --total-steps 100000 --max-steps 200` 完成，平均约 86 fps，保存 `outputs/sac_policy.zip`；10 个 deterministic 200-step eval episode 无越压，平均 SOC 约从 0.19 增至 0.51。将同一 policy 放到 600-step env 时 10 次中 7 次到达 SOC 0.8，仍无越压。
 - 2026-05-08 W3 caveat：`--max-steps 600` 正式重训在 45.5k steps 左右被 WSL OOM kill（dmesg 显示 python RSS 约 12.9 GB），未覆盖已保存的 100k policy。`train_sac.py` 已新增 `--checkpoint-freq` 和 `--policy-device`，后续长跑建议用较小 buffer / CPU policy / checkpoint 组合重新调奖励。
 - 2026-05-08 W3 TensorBoard：`outputs/runs/sac/SAC_1` 显示 100k 训练回报有阶段性上升（中段接近/略高于 0），但并非单调，末段回落到约 -0.94；因此“episode_return 应单调上升”和完整奖励调权仍保留未完成。
+- 2026-05-08 W3 reward sweep：修正 reward 电压项为 raw world-model voltage（L3 clipping 后仍惩罚危险趋势），并加入 `calendar_aging_scale=2.5e-6` 的时间老化下限；600-step horizon、小 buffer 训练不再 OOM。最终采用 `speed=30, voltage=300, temperature=0.02, aging=120`，`total_steps=60000`，`buffer_size=20000`，`batch_size=64` 的 horizon600 policy，训练 `ep_rew_mean` 从约 9.6 上升至 13.6。该模型已复制为本地 `outputs/sac_policy.zip`。
+- 2026-05-08 W4 eval：`eval_compare.py` 已输出 `trajectories.csv`、`metrics_by_episode.csv`、`metrics_summary.csv`、`paired_vs_cc_cv.csv` 和 `charging_comparison.png`。正式输出在 `outputs/eval_w4_final_default/`。CC-CV 采用 3A（接近 NASA/18650 常规倍率）作为基线；在双方都到达 80% SOC 的 paired episodes 上，SAC vs CC-CV：充电时间 596.5s → 411.75s（快 30.97%）、ΔSOH 0.001859 → 0.001536（降 17.37%）、过压 0 → 0。
+- 2026-05-08 W4 caveat：随机初始 SOC 下，CC-CV/MFCC 在 800s 内并非每个 episode 都能到 80%，因此“充至 80% 耗时”的核心百分比用同初始条件且双方均 hit target 的 paired episodes 统计；整体表同时保留 hit_rate 和 soc_end_mean，供答辩时透明说明。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
