@@ -1,0 +1,19 @@
+{
+  "generated": [
+    "fig01_system_architecture.png",
+    "fig02_data_flow.png",
+    "fig03_world_model_rollout.png",
+    "fig04_w4_metrics_bar.png",
+    "fig05_ecm_safety_projection.png",
+    "fig06_sac_training_curve.png",
+    "fig07_soh_baseline.png",
+    "fig08_soc_b0018_prediction.png",
+    "fig09_charging_comparison.png",
+    "fig10_pack_comparison.png",
+    "fig11_active_balancer_topology.png",
+    "fig12_upc_measured_profile.png",
+    "fig13_upc_real_balancing_semicycle.png",
+    "fig14_python_balancing_short_sim.png"
+  ],
+  "note": "Figures generated from local CRAIC2026 artifacts; third-party reference images are not included."
+}

@@ -5,11 +5,13 @@
 
 ## 1. 当前结论
 
-目前已经具备可支撑“单体智能快充 + 包级扩展”的核心结果图，但还缺三类关键图：
+目前已经具备可支撑“单体智能快充 + 包级扩展”的核心结果图。本轮已补齐 P0/P1 主链路插图，并统一汇总到 `paper_figures/`：
 
 1. **总览类图**：系统架构图、数据流图。
 2. **可信度类图**：世界模型预测 vs 真实、ECM 安全投影、SAC 训练曲线。
-3. **泛化展示图**：Zenodo 6985321 zero-shot、Zenodo 18471156 真实电站定性图。
+3. **实验结果类图**：单体指标柱状图、SOH baseline 图、W4/W5 已有结果图汇总。
+
+仍缺的是泛化展示类图：Zenodo 6985321 zero-shot、Zenodo 18471156 真实电站定性图。
 
 外部 Simulink / 电路图已经拉取到 `external_refs/simulink_balance/`，但只能做参考，不能作为本项目论文结果图。
 
@@ -28,17 +30,29 @@
 | UPC balancing semicycle | `outputs/upc_pack_paper/fig_upc_real_balancing_semicycle.png` | 真实 BMS balancing 行为 | 可用 |
 | Python active buck-boost 短仿真 | `outputs/upc_pack_paper/fig_python_balancing_short_sim.png` | 包级主动均衡效果 | 可用 |
 
+本轮已将上述可用图复制到 `paper_figures/`，并额外生成以下 IEEE 风格插图：
+
+| 图像 | 路径 | 说明 |
+|---|---|---|
+| 系统总体架构图 | `paper_figures/fig01_system_architecture.png` | 三层智能快充决策框架 |
+| 数据来源与用途划分 | `paper_figures/fig02_data_flow.png` | NASA / LG / UPC 数据流向 |
+| 世界模型 20-step rollout | `paper_figures/fig03_world_model_rollout.png` | B0018 holdout 开环预测 |
+| W4 核心指标柱状图 | `paper_figures/fig04_w4_metrics_bar.png` | time-to-80 与 ΔSOH paired 对比 |
+| ECM 安全投影图 | `paper_figures/fig05_ecm_safety_projection.png` | 高 SOC 下限流防过压 |
+| SAC 训练曲线 | `paper_figures/fig06_sac_training_curve.png` | episode return 与 critic loss |
+| SOH baseline 图 | `paper_figures/fig07_soh_baseline.png` | 验证集 scatter + 代表 cell 曲线 |
+
 ## 3. 缺失图像
 
 | 优先级 | 图像 | 目的 | 当前缺口 | 建议生成方式 |
 |---:|---|---|---|---|
-| P0 | 系统总体架构图 | 一页解释“三层架构 + 数据流” | 只有 Markdown ASCII 图 | 用 Mermaid/Matplotlib 生成正式 PNG/SVG |
-| P0 | W2 世界模型预测 vs 真实 | 证明 Mamba world model 可信 | 只有 metrics JSON，没有曲线图 | 从 `outputs/world_model_train_data.pt` + `outputs/world_model.pt` 采样 B0018 rollout 画 V/SOC/T |
-| P0 | W4 指标柱状图 | 把 30.97% / 17.37% 结果做成论文表图 | 只有 CSV 和四联曲线 | 从 `outputs/eval_w4_final_default/paired_vs_cc_cv.csv` 画 bar chart |
-| P1 | ECM 安全投影图 | 证明 L3 safety layer 不是口头约束 | 缺投影前后电流/电压图 | 随机采样 action，画 raw V vs clipped V、raw I vs safe I |
-| P1 | SAC reward / learning curve | 证明训练调参有效 | TensorBoard event 未导出 PNG | 解析 `outputs/runs/w3_horizon600/tb/SAC_1/events*` 画 reward 曲线 |
-| P1 | SOH 预测 vs 真实 | 证明 W1 SOH baseline | 只有 metrics JSON，没有 per-cycle 图 | 重新跑/扩展 `soh_train.py` 保存 predictions CSV 后画散点/退化曲线 |
-| P1 | 数据集流向图 | 解释 NASA / LG / UPC / Zenodo 各自用途 | 只有文字表 | 画 data provenance diagram |
+| P0 | 系统总体架构图 | 一页解释“三层架构 + 数据流” | 已生成 | `paper_figures/fig01_system_architecture.png` |
+| P0 | W2 世界模型预测 vs 真实 | 证明 Mamba world model 可信 | 已生成 | `paper_figures/fig03_world_model_rollout.png` |
+| P0 | W4 指标柱状图 | 把 30.97% / 17.37% 结果做成论文表图 | 已生成 | `paper_figures/fig04_w4_metrics_bar.png` |
+| P1 | ECM 安全投影图 | 证明 L3 safety layer 不是口头约束 | 已生成 | `paper_figures/fig05_ecm_safety_projection.png` |
+| P1 | SAC reward / learning curve | 证明训练调参有效 | 已生成 | `paper_figures/fig06_sac_training_curve.png` |
+| P1 | SOH 预测 vs 真实 | 证明 W1 SOH baseline | 已生成 | `paper_figures/fig07_soh_baseline.png` |
+| P1 | 数据集流向图 | 解释 NASA / LG / UPC / Zenodo 各自用途 | 已生成 | `paper_figures/fig02_data_flow.png` |
 | P2 | Randomized 动态负载外推图 | 证明动态负载泛化 | 指标记录存在版本差异 | 先复核 Randomized rollout，再画 profile 与误差曲线 |
 | P2 | Zenodo 6985321 zero-shot 曲线 | W5 定量泛化 | 任务未完成 | 按 OCV-SOC 表重建标签后画 SOC/SOH |
 | P2 | Zenodo 18471156 定性图 | 真实电站展示 | 数据未下载 | 下载后跑 inference，画 V/I/T + SOC/SOH |
@@ -73,12 +87,11 @@ outputs/paper_figures/randomized_rollout/
 
 ## 6. 建议下一步生成顺序
 
-最推荐先补 5 张图，性价比最高：
+本轮已完成最关键的主链路图。下一步推荐补：
 
-1. `fig_system_architecture.png`
-2. `fig_world_model_rollout.png`
-3. `fig_w4_metrics_bar.png`
-4. `fig_ecm_safety_projection.png`
-5. `fig_sac_training_curve.png`
+1. `fig15_zenodo_6985321_zero_shot.png`
+2. `fig16_zenodo_18471156_station_demo.png`
+3. `fig17_randomized_rollout_recheck.png`
+4. `fig18_simulink_pack_workflow.png`
 
-这五张补完后，报告主链路就比较完整；再往后做 Zenodo 6985321 / 18471156，属于泛化与答辩加分项。
+其中前两张属于泛化与答辩加分项；第三张用于修正 Randomized 动态负载指标口径；第四张用于说明后续 Simulink 接口流程。
