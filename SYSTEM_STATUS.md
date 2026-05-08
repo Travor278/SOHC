@@ -281,6 +281,8 @@ W3 环境每一步执行：
 | Mamba 世界模型 | `outputs/world_model.pt` | WSL GPU/Mamba 训练产物 |
 | 世界模型 metrics | `outputs/world_model.metrics.json` | 1-step V MAE 等指标 |
 | Randomized 子集评估 | `outputs/world_model_randomized_subset_eval.metrics.json` | 动态负载子集外推评估 |
+| Randomized 全量复核 | `outputs/world_model_randomized_full_stride64.metrics.json` | 28/28 RW，strict stride=64，20-step rollout 压力边界 |
+| Randomized 复核图 | `paper_figures/fig19_randomized_rollout_recheck.png` | 逐文件误差和 RW2/RW3 异常贡献 |
 | ECM 参数来源 | `MATLAB滤波算法代码——云储实时数据/.../savemat_2order.mat` | legacy MATLAB STA/MIUKF 参数源 |
 
 ### W3 产物
@@ -329,11 +331,12 @@ W3 环境每一步执行：
 - Randomized 子集：
   - 1-step V MAE：约 `2.39 mV`
   - sampled 20-step rollout V MAE：约 `7.71 mV`
-- 注意：上述指标来自 6 个最小文件子集，不是 28 个 `.mat` 全量。
-- Randomized 缓存覆盖：
-  - 严格 `stride=64` 已缓存 `25/28` 个 RW 文件。
-  - 缺失的 `RW9/RW11/RW12` 已用 `stride=1024` 补充缓存。
-  - 当前可用于后续复核的是“25 个严格缓存 + 3 个稀疏缓存”的组合，尚不是统一 stride 的正式全量 metrics。
+- Randomized strict full recheck：
+  - 覆盖 `28/28` 个 RW 文件，统一 `stride=64`，20-step rollout stride `256`。
+  - one-step V MAE：`10.07 mV`
+  - 20-step rollout V MAE / p95：`103.43 mV` / `763.48 mV`
+  - 去除 `RW2/RW3` 后 weighted one-step/rollout V MAE：`2.26 mV` / `25.63 mV`
+  - 结论：全量 Randomized 是当前世界模型的动态负载压力边界，不能写成 `<10 mV` 达标。
 
 ### SAC / W4 核心对比
 
@@ -482,10 +485,10 @@ aging = 120
    - 当前 best 约 `3.48%`。
    - 论文图像可用，但若要严苛指标，需要继续做标签清洗或改模型。
 
-2. Randomized 全量指标尚未统一定稿。
-   - 当前严格 `stride=64` 已缓存 25/28 个 RW 文件。
-   - `RW9/RW11/RW12` 已用 `stride=1024` 补充缓存，合计覆盖 28/28 个 RW 文件。
-   - 论文最终若写“全量 Randomized”，需要明确口径：混合缓存复核，或重新用统一 `stride=1024` 跑完整 28 文件 metrics。
+2. Randomized 全量动态负载是当前 W2 的主要短板。
+   - 严格 `stride=64` 已缓存并评估 28/28 个 RW 文件。
+   - 全量 20-step rollout V MAE 为 `103.43 mV`，主要由 `RW2/RW3` 拉高。
+   - 去除 `RW2/RW3` 后为 `25.63 mV`，仍应作为压力边界而非最终达标指标。
 
 3. W4 的 paired-vs-CCCV 口径需要在论文/答辩中说明。
    - 因为随机初始 SOC 下，CC-CV/MFCC 在固定 horizon 内并非每次都能到 80%。
@@ -512,9 +515,9 @@ aging = 120
 
 ### A. Randomized 动态负载指标复核
 
-1. 统一 `SYSTEM_STATUS.md` / `TODO.md` / metrics JSON 中 Randomized 20-step rollout 口径。
-2. `RW9/RW11/RW12` 已用 `stride=1024` 补齐缓存；下一步是用缓存复核指标，不再重新解析 `.mat`。
-3. 输出 `paper_figures/fig18_randomized_rollout_recheck.png`，再决定正文是否写 20-step 动态负载指标。
+1. 已统一 `SYSTEM_STATUS.md` / `TODO.md` / metrics JSON 中 Randomized 20-step rollout 口径。
+2. 已完成统一 `stride=64` 的 28/28 文件复核。
+3. 已输出 `paper_figures/fig19_randomized_rollout_recheck.png`。正文建议写成“动态负载压力测试暴露 RW2/RW3 域差异”，不写成 Randomized 全量达标。
 
 ### B. 继续加强 SOH Mamba-head
 
@@ -557,11 +560,11 @@ aging = 120
 最建议现在做：
 
 ```text
-复核 Randomized 20-step rollout 指标，并加强 BatteryML/Mamba-head SOH 对比。
+针对 RW2/RW3 做 Randomized fine-tune，并加强 BatteryML/Mamba-head SOH 对比。
 ```
 
 原因：
 
 - 主链路、包级 UPC、Zenodo 展示图都已具备。
-- 当前最影响论文严谨性的剩余项是 Randomized 指标口径不一致。
+- Randomized 指标口径已统一；新的问题是 28-file strict full 暴露 `RW2/RW3` 域差异。
 - Mamba-head SOH 轻量版已补齐，但仍可继续优化到更像正式 BatteryML trainer 的实验。

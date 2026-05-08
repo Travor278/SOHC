@@ -11,8 +11,9 @@
 | 图 2 | `paper_figures/fig02_data_flow.png` | NASA、LG、UPC 与 Zenodo 数据在训练、验证和展示中的用途划分。 | 强调训练主线 NASA 同源，LG 只给权重，UPC/Zenodo 不进训练。 | Zenodo 是诊断/展示，不是训练集。 |
 | 图 3 | `paper_figures/fig08_soc_b0018_prediction.png` | B0018 holdout 上 SOC 参考标签与 W1 LSTM 预测曲线。 | SOC 走势可跟随，但 MAE 3.48% 未达 1.5%。 | 不夸大 SOC 精度。 |
 | 图 4 | `paper_figures/fig07_soh_baseline.png` | NASA 容量比 SOH baseline 的预测一致性与代表 cell 退化轨迹。 | SOH 可作为世界模型软标签。 | 使用 `Capacity` 字段，不是无标签部署模型。 |
-| 图 5 | `paper_figures/fig03_world_model_rollout.png` | B0018 holdout 上 Mamba 世界模型 20-step open-loop 电压预测。 | 证明 W2 短期动力学预测稳定。 | Randomized 20-step 指标仍在复核。 |
+| 图 5 | `paper_figures/fig03_world_model_rollout.png` | B0018 holdout 上 Mamba 世界模型 20-step open-loop 电压预测。 | 证明 W2 短期动力学预测稳定。 | Randomized full 见补充图 19，是动态负载压力边界。 |
 | 图 6 | `paper_figures/fig05_ecm_safety_projection.png` | 高 SOC 条件下 ECM 安全层对充电电流的电压约束投影。 | L3 安全层保证动作物理安全。 | 参数来自 legacy 二阶 ECM，需要后续电芯级标定。 |
+| 补充图 19 | `paper_figures/fig19_randomized_rollout_recheck.png` | NASA Randomized 28/28 文件 strict stride=64 下的 20-step rollout 全量复核。 | 主动说明 `RW2/RW3` 拉高全量动态负载误差，避免只展示顺滑子集。 | 这是压力边界，不是 `<10 mV` 达标结果。 |
 | 图 7 | `paper_figures/fig06_sac_training_curve.png` | SAC 训练过程中的 episode return 与 critic loss。 | reward sweep 后策略可学习稳定行为。 | return 不是严格单调。 |
 | 图 8 | `paper_figures/fig04_w4_metrics_bar.png` | 单体 paired episodes 中 SAC 与 CC-CV 的充电时间和 ΔSOH 对比。 | W4 核心结论：更快且更少老化。 | paired 口径需说明。 |
 | 图 9 | `paper_figures/fig09_charging_comparison_polished.png` | SAC、CC-CV 与 MFCC 的 I/V/SOC/T 轨迹对比。 | SAC 形成动态电流轨迹，423 s 达到 80% SOC，且电压保持在 4.2 V 安全线内。 | 轨迹来自世界模型环境。 |
@@ -31,7 +32,7 @@
 1. 图形摘要。
 2. 图 1 + 图 2：架构与数据策略。
 3. 图 3 + 图 4：W1 状态估计。
-4. 图 5 + 图 6：W2 世界模型与安全层。
+4. 图 5 + 图 6 + 补充图 19：W2 世界模型、安全层与动态负载边界。
 5. 图 8 + 图 9：W4 单体快充核心结果。
 6. 图 10 + 图 14：包级复制与均衡效果。
 7. 图 15 + 图 16：泛化诊断与真实电站展示。

@@ -626,27 +626,71 @@ def _rollout_errors_from_traces(
 ) -> list[float]:
     """Return sampled rollout voltage errors in mV for a list of traces."""
     errors_mV: list[float] = []
+    hist_batch: list[np.ndarray] = []
+    future_batch: list[np.ndarray] = []
+
+    def flush() -> None:
+        """Evaluate pending rollout starts as one tensor batch."""
+        if not hist_batch:
+            return
+        errors_mV.extend(
+            _batched_rollout_errors(
+                model,
+                np.stack(hist_batch).astype(np.float32, copy=False),
+                np.stack(future_batch).astype(np.float32, copy=False),
+                horizon=horizon,
+                device=device,
+            )
+        )
+        hist_batch.clear()
+        future_batch.clear()
+
     for trace in traces:
         features = np.asarray(trace["features"], dtype=np.float32)
         if len(features) <= seq_len + horizon:
             continue
         for start in range(0, len(features) - seq_len - horizon, stride):
-            hist = torch.from_numpy(features[start : start + seq_len].copy()).to(device).unsqueeze(0)
-            pred_soh = float(hist[0, -1, 1].detach().cpu())
-            for step_idx in range(horizon):
-                pred = model(hist).squeeze(0).detach()
-                future_row = features[start + seq_len + step_idx]
-                errors_mV.append(abs(float(pred[1].detach().cpu()) - float(future_row[2])) * 1000.0)
-                next_action = float(future_row[5])
-                delta_soh = max(float(pred[3].detach().cpu()), 0.0)
-                pred_soh = float(np.clip(pred_soh - delta_soh, 0.0, 1.2))
-                next_feature = torch.tensor(
-                    [[float(pred[0].clamp(0.0, 1.0)), pred_soh, float(pred[1]), next_action, float(pred[2]), next_action]],
-                    dtype=hist.dtype,
-                    device=device,
-                )
-                hist = torch.cat([hist[:, 1:], next_feature.unsqueeze(0)], dim=1)
+            hist_batch.append(features[start : start + seq_len].copy())
+            future_batch.append(features[start + seq_len : start + seq_len + horizon].copy())
+            if len(hist_batch) >= 1024:
+                flush()
+    flush()
     return errors_mV
+
+
+@torch.no_grad()
+def _batched_rollout_errors(
+    model: BatteryWorldModel,
+    hist_np: np.ndarray,
+    future_np: np.ndarray,
+    *,
+    horizon: int,
+    device: torch.device,
+) -> list[float]:
+    """Evaluate a batch of open-loop rollout starts with true future actions."""
+    hist = torch.from_numpy(hist_np).to(device)
+    future = torch.from_numpy(future_np).to(device)
+    pred_soh = hist[:, -1, 1].clone()
+    batch_errors: list[np.ndarray] = []
+    for step_idx in range(horizon):
+        pred = model(hist).detach()
+        batch_errors.append((pred[:, 1] - future[:, step_idx, 2]).abs().detach().cpu().numpy() * 1000.0)
+        next_action = future[:, step_idx, 5]
+        delta_soh = pred[:, 3].clamp_min(0.0)
+        pred_soh = (pred_soh - delta_soh).clamp(0.0, 1.2)
+        next_feature = torch.stack(
+            [
+                pred[:, 0].clamp(0.0, 1.0),
+                pred_soh,
+                pred[:, 1],
+                next_action,
+                pred[:, 2],
+                next_action,
+            ],
+            dim=-1,
+        )
+        hist = torch.cat([hist[:, 1:], next_feature.unsqueeze(1)], dim=1)
+    return np.concatenate(batch_errors).astype(float).tolist()
 
 
 def _safe_div(value: float, count: int) -> float:
