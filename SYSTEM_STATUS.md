@@ -65,6 +65,191 @@ W4: CC-CV / MFCC / SAC 对比评估
 | `craic_pipeline/train_sac.py` | 已实现 | SAC 训练入口，支持 reward sweep/checkpoint |
 | `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估与画图 |
 
+## 3.1 W1 主要算法
+
+W1 是状态估计层，目标是给后续世界模型和 RL 环境提供 `SOC` / `SOH` 软标签与推断能力。
+
+### SOC 估计
+
+当前 SOC 主算法是 KeiLongW 风格的 stacked LSTM：
+
+```text
+输入: 滑动窗口 V/I/T 序列
+shape: (N, window, 3)
+特征: [voltage, current, temperature]
+
+网络:
+LSTM(256, selu, return_sequences=True)
+LSTM(256, selu, return_sequences=True)
+LSTM(128, selu)
+Dense(64, selu)
+Dense(1, linear)
+
+输出:
+SOC ∈ [0, 1]
+```
+
+训练策略：
+
+1. 使用 KeiLongW release 中的 LG 18650HG2 `.h5` 作为 warm-start。
+2. 用 NASA ARC-FY08Q4 多温度/多倍率数据 fine-tune。
+3. 默认冻结前两层 LSTM，只微调第三层 LSTM 和 Dense head。
+4. SOC 标签采用 NASA discharge cycle 内的严格库仑积分构造：
+   - 每个 discharge cycle 独立积分。
+   - 起点强制 `SOC=1`。
+   - 终点按容量/截止点校准。
+   - 避免跨 cycle 滑窗污染。
+
+当前状态：
+
+- 推断链路已跑通。
+- 当前 best B0018 holdout MAE 约 `3.48%`。
+- 尚未达到 `<1.5%` 理想指标。
+
+### SOH 估计
+
+当前 SOH 主算法是 BatteryML-compatible 的容量比 baseline：
+
+```text
+SOH = capacity / fresh_capacity
+```
+
+实现方式：
+
+1. `nasa_loader.py` 解析 NASA `.mat`。
+2. `soh_train.py` 将 NASA cycle 转成 BatteryML 风格 `BatteryData / CycleData`。
+3. 从 NASA `Capacity` 字段构造 SOH 标签。
+4. 使用 Ridge / Variance-style baseline 学习 cycle-level 统计特征到 SOH 的映射。
+
+cycle-level 特征包括：
+
+- 电压均值、标准差、最小值、最大值。
+- 电流均值、绝对电流均值。
+- 温度均值、最大值。
+- cycle 时间跨度。
+- 容量一致性特征。
+
+当前状态：
+
+- NASA holdout RMSE 已满足 `<2% SOH`。
+- 注意：该 SOH baseline 依赖 NASA `Capacity` 字段，适合作软标签/一致性基准，不等价于真实部署时无容量标签的 SOH 估计器。
+
+## 3.2 W2 输入输出接口
+
+W2 包含两个核心模块：
+
+1. Mamba 世界模型。
+2. ECM 物理安全层。
+
+### W2 数据张量
+
+训练数据包：
+
+```text
+outputs/world_model_train_data.pt
+```
+
+核心字段：
+
+```text
+X:      (N, L, 6)
+y:      (N, 4)
+traces: 连续 rollout 评估轨迹
+meta:   数据来源、seq_len、SOC/SOH 标签来源等
+```
+
+其中 `L=64` 是默认历史窗口长度。
+
+### Mamba 世界模型输入
+
+世界模型输入是历史状态-动作序列：
+
+```text
+X[t-L:t] shape = (B, L, 6)
+```
+
+每个时间步 6 个通道：
+
+| 通道 | 名称 | 说明 |
+|---:|---|---|
+| 0 | `SOC` | 当前 SOC，范围 `[0, 1]` |
+| 1 | `SOH` | 当前 SOH，通常范围 `[0, 1]` |
+| 2 | `V` | 端电压，单位 V |
+| 3 | `I` | 当前电流，NASA/W2 口径：正值为充电 |
+| 4 | `T` | 温度，单位 °C |
+| 5 | `action_current` | 动作电流，单位 A，正值为充电 |
+
+### Mamba 世界模型输出
+
+世界模型输出下一步动力学：
+
+```text
+y_hat shape = (B, 4)
+```
+
+4 个输出通道：
+
+| 通道 | 名称 | 说明 |
+|---:|---|---|
+| 0 | `SOC_next` | 下一步 SOC |
+| 1 | `V_next` | 下一步端电压 |
+| 2 | `T_next` | 下一步温度 |
+| 3 | `delta_SOH` | 单步 SOH 损耗 |
+
+当前实现采用 residual head：
+
+```text
+SOC_next = SOC_last + ΔSOC
+V_next   = V_last   + ΔV
+T_next   = T_last   + ΔT
+delta_SOH = predicted aging loss
+```
+
+这样可以让模型初始接近 persistence baseline，显著降低电压预测漂移。
+
+### ECM 安全层输入输出
+
+ECM 安全层用于 W2/W3 的 L3 物理约束。
+
+输入：
+
+```text
+soc: 当前 SOC
+action_current: 候选动作电流
+```
+
+输出：
+
+```text
+safe_current: 投影后的安全电流
+```
+
+约束目标：
+
+```text
+V_min <= V_pred <= V_max
+```
+
+当前电流符号适配：
+
+- NASA/W2/RL 口径：正电流表示充电。
+- legacy MATLAB ECM 口径更接近正电流放电。
+- 因此 RL 环境传入 ECM 前会对电流反号，ECM 投影后再转回 W2 口径。
+
+### W2 到 W3 的接口
+
+W3 环境每一步执行：
+
+```text
+1. SAC 输出 normalized action ∈ [-1, 1]
+2. 映射到 charging current ∈ [0, I_max]
+3. ECM safety layer 投影得到 safe_current
+4. 将 [SOC, SOH, V, I, T, safe_current] 写入历史窗口
+5. Mamba 世界模型输出 [SOC_next, V_next, T_next, delta_SOH]
+6. 环境更新 state = [SOC_next, SOH - delta_SOH, V_next, safe_current, T_next]
+7. 计算 reward 并返回给 SAC
+```
+
 ## 4. 已有关键产物
 
 ### W1 产物
