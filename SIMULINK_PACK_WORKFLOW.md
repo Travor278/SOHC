@@ -24,6 +24,16 @@
 - https://github.com/yavuzhanocak/Single-switch-capacitor-battery-balance
 - https://doi.org/10.1016/j.compeleceng.2025.110736
 
+本地参考素材已拉取，索引见 [SIMULINK_REFERENCE_IMAGES.md](SIMULINK_REFERENCE_IMAGES.md)。图片和第三方仓库保存在 `external_refs/simulink_balance/`，该目录被 git ignore，仅用于本机参考。
+
+当前已验证最有用的三类图：
+
+- `single_switch_capacitor_07.png`：Simulink 总体模型，可参考 plant / converter / balance control / scope 的连接方式。
+- `single_switch_capacitor_08.png`、`single_switch_capacitor_09.png`：SOC 和 cell voltage 仿真曲线，可参考论文图的排版口径。
+- `single_switch_capacitor_10.png`、`single_switch_capacitor_11.png`：Altium 电路/PCB 图，可参考主动均衡硬件实现复杂度。
+
+注意：`yavuzhanocak/Single-switch-capacitor-battery-balance` 根目录未发现 license。未经许可不要把这些图作为论文结果图或直接放入正式提交材料；我们自己的正式图继续使用 `outputs/upc_pack_paper/` 里由 UPC 数据和 Python 仿真生成的图。
+
 ## 1. 推荐仿真分三层做
 
 ### A. 数据回放校准

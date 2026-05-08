@@ -35,6 +35,10 @@ external/BatteryML/
 !external/.gitkeep
 !external/README.md
 
+# External reference images/repos pulled for local reading only
+external_refs/**
+!external_refs/.gitkeep
+
 # Model checkpoints and outputs
 outputs/**
 !outputs/.gitkeep
