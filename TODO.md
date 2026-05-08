@@ -105,6 +105,9 @@
 
 ## W5 · 包级扩展 + 答辩
 
+- [x] Python 6S1P 包级原型：单体 SAC/CC-CV/MFCC 策略复制 + SOC-spread 均衡协调器
+- [x] 输出包级对比：`outputs/eval_pack_6s1p_h1200/`（轨迹、summary、paired-vs-CCCV、pack 对比图）
+- [x] Python 30S1P 包级烟测：用于对接现有 `batterpack.slx` / `buck_boost_balance.slx`
 - [ ] Simulink 30 模组：每模组独立 SAC 策略，导出包级仿真
 - [ ] Zenodo 6985321 WLTP zero-shot 误差曲线（**定量** L3）
 - [ ] **Zenodo 18471156 定性展示（L4）**：
@@ -137,6 +140,7 @@
 - 2026-05-07 W2 世界模型：直接预测绝对 `[SOC_next,V_next,T_next,delta_SOH]` 时 50 epoch 后 B0018 holdout 电压 MAE 约 28 mV；改为 residual head（初始等价 persistence baseline）后，WSL GPU/Mamba 50 epoch 在 B0005/B0006/B0007 → B0018 holdout 上 1-step V MAE 为 1.42 mV，满足 `<5 mV`。20-step drift 和 Randomized 外推尚未验收。
 - 2026-05-08 W2 rollout：重新生成带 `traces` 的 `outputs/world_model_train_data.pt` 后，B0018 holdout 20-step open-loop voltage drift MAE 为 8.04 mV、p95 为 22.03 mV，满足 `<50 mV`。
 - 2026-05-08 W2 Randomized：新增 `--cache-dir` 分文件 shard 缓存，并按文件大小优先解析 Randomized。6 个最小 Randomized `.mat` shard 已缓存；在该动态负载子集上，PCoE 训练好的 residual Mamba 1-step V MAE 为 2.39 mV，20-step 采样 rollout V MAE 为 7.71 mV，满足 Randomized 子集 `<10 mV`。注意：这不是 28 个 Randomized 文件的全量验收；全量仍建议后台长跑或继续增量缓存。
+- 2026-05-08 W2 Randomized full 评估：`stride=64` 严格全量评估因耗时过长已手动停止；缓存完成 25/28 个 RW 文件（缺 `RW9/RW11/RW12`），缓存体积约 2.5 GB。25 个文件足够作为进入包级原型的动态负载覆盖基线；论文最终若写“全量 Randomized”需用更稀疏 `stride=512/1024` 补完整 28 文件报告。
 - 2026-05-08 W2 ECM：`cross_check_against_matlab()` 使用 `savemat_2order.mat` 的 `I/SOC/Ts` 和独立二阶 RC 参考公式做 Python 对照，最大误差 < 1 mV；1000 个随机动作投影后端电压均满足 `V_min <= V_pred <= V_max`。
 - 2026-05-08 W3 动作符号：NASA/W2 张量里正电流对应充电、负电流对应放电；MATLAB ECM 参数口径更接近正电流放电。因此 `BatteryChargingEnv` 对 RL/世界模型暴露正充电电流 `[0, I_max]`，传给 ECM safety layer 时内部反号，并将世界模型电压输出硬裁剪到 `[V_min, V_max]` 作为 L3 安全约束。
 - 2026-05-08 W3 WSL 依赖：`Ubuntu2404` 的 `~/.venvs/sohc-craic-py312` 已补装 `gymnasium==1.2.3`、`stable-baselines3==2.8.0`、`tensorboard==2.20.0`。Windows `.venv_craic` 可跑 W3 单测，但 Mamba checkpoint 加载/训练仍优先走 WSL。
@@ -146,6 +150,7 @@
 - 2026-05-08 W3 reward sweep：修正 reward 电压项为 raw world-model voltage（L3 clipping 后仍惩罚危险趋势），并加入 `calendar_aging_scale=2.5e-6` 的时间老化下限；600-step horizon、小 buffer 训练不再 OOM。最终采用 `speed=30, voltage=300, temperature=0.02, aging=120`，`total_steps=60000`，`buffer_size=20000`，`batch_size=64` 的 horizon600 policy，训练 `ep_rew_mean` 从约 9.6 上升至 13.6。该模型已复制为本地 `outputs/sac_policy.zip`。
 - 2026-05-08 W4 eval：`eval_compare.py` 已输出 `trajectories.csv`、`metrics_by_episode.csv`、`metrics_summary.csv`、`paired_vs_cc_cv.csv` 和 `charging_comparison.png`。正式输出在 `outputs/eval_w4_final_default/`。CC-CV 采用 3A（接近 NASA/18650 常规倍率）作为基线；在双方都到达 80% SOC 的 paired episodes 上，SAC vs CC-CV：充电时间 596.5s → 411.75s（快 30.97%）、ΔSOH 0.001859 → 0.001536（降 17.37%）、过压 0 → 0。
 - 2026-05-08 W4 caveat：随机初始 SOC 下，CC-CV/MFCC 在 800s 内并非每个 episode 都能到 80%，因此“充至 80% 耗时”的核心百分比用同初始条件且双方均 hit target 的 paired episodes 统计；整体表同时保留 hit_rate 和 soc_end_mean，供答辩时透明说明。
+- 2026-05-08 W5 pack prototype：新增 `craic_pipeline/pack_balance.py`，默认 `6S1P`，支持 `30S1P` CLI；仿照 liionpack 的“单体模型扩成 series/parallel pack”思想，但不引入 PyBaMM 大依赖。当前 `outputs/eval_pack_6s1p_h1200/` 结果：SAC hit_rate 3/3，CC-CV 1/3，MFCC 0/3；paired episode 上 SAC vs CC-CV 充电时间 1121s → 668s（快 40.41%）、平均 ΔSOH 降 23.01%、末端 SOC spread 降 28.00%、实际过压 0。`outputs/eval_pack_30s1p_smoke/` 已完成 30S1P 短烟测，三策略 120 step 均无实际过压，可作为 Simulink 30 模组对接入口。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。

@@ -8,6 +8,7 @@
     rl_env            gymnasium 环境，step() 调 Mamba
     train_sac         stable-baselines3 SAC 训练
     eval_compare      vs CC-CV / MFCC / MIUKF + Zenodo 6985321/18471156 泛化展示
+    pack_balance      多单体策略复制 + 包级 SOC-spread 均衡仿真
 
 数据策略 v0.2：纯 NASA Plus 多子集同源训练，避免跨化学体系迁移误差。
 """

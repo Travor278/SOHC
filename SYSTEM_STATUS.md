@@ -35,6 +35,12 @@ W4: CC-CV / MFCC / SAC 对比评估
   ├─ 轨迹: I(t), V(t), SOC(t), T(t)
   ├─ 指标: 到 80% 时间、ΔSOH、过压次数、平均温度
   └─ paired-vs-CCCV 核心对比表
+        │
+        ▼
+W5: 多单体 / 包级扩展
+  ├─ 6S1P Python pack prototype
+  ├─ 单体策略复制: CC-CV / MFCC / SAC per cell
+  └─ SOC-spread balancing coordinator
 ```
 
 ## 2. 数据策略
@@ -64,6 +70,7 @@ W4: CC-CV / MFCC / SAC 对比评估
 | `craic_pipeline/rl_env.py` | 已实现 | SAC 环境，含 reward 和 L3 安全约束 |
 | `craic_pipeline/train_sac.py` | 已实现 | SAC 训练入口，支持 reward sweep/checkpoint |
 | `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估与画图 |
+| `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 均衡、包级指标与画图 |
 
 ## 3.1 W1 主要算法
 
@@ -341,6 +348,45 @@ W3 环境每一步执行：
 - ΔSOH 降低 ≥ 10%
 - 过压 = 0
 
+### 包级 6S1P 初版对比
+
+当前包级原型输出使用：
+
+- 模块：`craic_pipeline/pack_balance.py`
+- 默认包规模：`6S1P`
+- 扩展烟测：`30S1P`
+- 策略：CC-CV / MFCC / SAC 单体策略复制到每个 cell
+- 均衡：SOC-spread active balancing trim
+- horizon：1200 step
+- 输出目录：`outputs/eval_pack_6s1p_h1200/`
+
+包级停止口径比 W4 更严格：要求 **pack 内最低 SOC cell** 达到 80%。
+
+| 指标 | CC-CV | MFCC | SAC |
+|---|---:|---:|---:|
+| hit_rate | `1/3` | `0/3` | `3/3` |
+| 平均到目标时间 | `1121 s` | `NaN` | `699.67 s` |
+| 平均 ΔSOH | `0.003147` | `0.003252` | `0.002513` |
+| 末端 SOC spread | `0.02016` | `0.03787` | `0.02496` |
+| 实际过压次数 | `0` | `0` | `0` |
+
+在双方都命中的 paired episode 上，SAC vs CC-CV：
+
+| 指标 | CC-CV | SAC | 改善 |
+|---|---:|---:|---:|
+| pack min-cell 到 80% 时间 | `1121 s` | `668 s` | `+40.41%` |
+| 平均 ΔSOH | `0.003117` | `0.002400` | `-23.01%` |
+| 末端 SOC spread | `0.04544` | `0.03272` | `-28.00%` |
+
+注意：`raw_overvoltage_count` 统计的是世界模型未经 L3 裁剪的风险趋势；实际轨迹电压已由 ECM safety layer 投影，过压次数为 0。
+
+30S1P 短烟测也已跑通：
+
+- 输出目录：`outputs/eval_pack_30s1p_smoke/`
+- 设置：30S1P，120 step，1 episode
+- 结果：CC-CV / MFCC / SAC 三策略实际过压均为 0
+- 用途：作为 `batterpack.slx` / `buck_boost_balance.slx` 的 per-cell current/SOC 轨迹接口验证，不作为最终性能对比。
+
 ## 6. 当前重要工程决策
 
 ### 电流符号
@@ -386,8 +432,9 @@ aging = 120
    - 论文图像可用，但若要严苛指标，需要继续做标签清洗或改模型。
 
 2. Randomized 全量评估尚未完成。
-   - 当前是 6 文件子集。
-   - 全量 28 文件建议继续分 shard 缓存长跑。
+   - 当前严格 `stride=64` 已缓存 25/28 个 RW 文件，缺 `RW9/RW11/RW12`。
+   - 25 个文件足够推进包级原型。
+   - 论文最终若写“全量 Randomized”，建议用 `stride=512/1024` 跑完整 28 文件报告。
 
 3. W4 的 paired-vs-CCCV 口径需要在论文/答辩中说明。
    - 因为随机初始 SOC 下，CC-CV/MFCC 在固定 horizon 内并非每次都能到 80%。
@@ -401,11 +448,22 @@ aging = 120
    - 数据和 OCV-SOC 曲线已在 `data/zenodo_6985321/`。
    - 需要用 OCV-SOC 表 + 库仑积分重建参考 SOC/SOH，再跑 zero-shot 曲线。
 
+6. 包级原型仍是 Python supervisory simulator。
+   - 当前没有直接求解 buck-boost 开关电路。
+   - 30S1P 短烟测已完成。
+   - 下一步应对接 `batterpack.slx` / `buck_boost_balance.slx` 做 Simulink 级验证。
+
 ## 8. 下一步建议
 
 建议下一步优先顺序：
 
-### A. 补 W4 剩余创新点
+### A. 包级扩展继续推进
+
+1. 将 Python 输出的 per-cell current/SOC trajectory 导出给 Simulink。
+2. 在 `batterpack.slx` / `buck_boost_balance.slx` 中验证 buck-boost 均衡响应。
+3. 保留 6S1P 作为论文主图，30S1P 作为工程扩展图。
+
+### B. 补 W4 剩余创新点
 
 1. 在 BatteryML-compatible SOH 流程里接 Mamba world-model features/head。
 2. 输出一张 SOH 对比表：
@@ -414,7 +472,7 @@ aging = 120
    - Mamba feature/head variant
 3. 目标不是重新大幅提升 RMSE，而是形成“BatteryML 内挂 Mamba head”的架构创新证据。
 
-### B. 做 Zenodo 6985321 zero-shot
+### C. 做 Zenodo 6985321 zero-shot
 
 1. 读取：
    - `Experimental_data_fresh_cell.csv`
@@ -426,7 +484,7 @@ aging = 120
    - `outputs/zenodo_6985321_zero_shot_metrics.csv`
    - `outputs/figures/zenodo_6985321_soc_soh.png`
 
-### C. 准备答辩图表包
+### D. 准备答辩图表包
 
 优先整理以下图：
 
@@ -434,9 +492,10 @@ aging = 120
 2. W2 世界模型预测 vs 真实曲线。
 3. W4 `charging_comparison.png`。
 4. W4 paired-vs-CCCV 指标表。
-5. Zenodo 6985321 zero-shot 曲线。
+5. W5 `pack_comparison.png`。
+6. Zenodo 6985321 zero-shot 曲线。
 
-### D. 再考虑 SOC 精度攻坚
+### E. 再考虑 SOC 精度攻坚
 
 如果时间允许，再回头攻 SOC `<1.5%`：
 
@@ -449,12 +508,11 @@ aging = 120
 最建议现在做：
 
 ```text
-先做 Zenodo 6985321 zero-shot + 图表输出。
+对接 Simulink buck-boost balance。
 ```
 
 原因：
 
-- 数据已经下载。
-- 对 W5/PPT 价值高。
-- 不会破坏现有 W3/W4 主链路。
-- 可以快速补上“泛化验证”这一块答辩材料。
+- 6S1P Python pack 已跑通。
+- 30S1P smoke 已跑通，是现有 Simulink 30 模组资产的自然接口。
+- 能把“单体智能快充”升级成“包级均衡验证”。
