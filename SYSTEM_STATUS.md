@@ -294,7 +294,9 @@ W3 环境每一步执行：
 | Randomized 子集评估 | `outputs/world_model_randomized_subset_eval.metrics.json` | 动态负载子集外推评估 |
 | Randomized 全量复核 | `outputs/world_model_randomized_full_stride64.metrics.json` | 28/28 RW，strict stride=64，20-step rollout 压力边界 |
 | Randomized QC 复核 | `outputs/world_model_randomized_full_stride64_tempqc.metrics.json` | 温度 QC 后 26/28 RW 主指标 |
+| B0018 长 horizon replay | `outputs/closed_loop_replay_b0018.metrics.json` | WSL/Mamba/CUDA 下 100/600-step replay 漂移 |
 | Randomized 复核图 | `paper_figures/fig19_randomized_rollout_recheck.png` | raw stress-test 与 QC main result 对比 |
+| 长 horizon replay 图 | `paper_figures/fig20_closed_loop_replay.png` | 20/100/600-step 电压 MAE/P95 对比 |
 | ECM 参数来源 | `MATLAB滤波算法代码——云储实时数据/.../savemat_2order.mat` | legacy MATLAB STA/MIUKF 参数源 |
 
 ### W3 产物
@@ -340,6 +342,9 @@ W3 环境每一步执行：
 - B0005/B0006/B0007 -> B0018 holdout：
   - 1-step V MAE：约 `1.42 mV`
   - 20-step rollout drift：约 `8.04 mV`
+  - 100-step replay V MAE / p95：`22.36 mV` / `85.83 mV`
+  - 600-step replay V MAE / p95：`170.56 mV` / `550.20 mV`
+  - 结论：短期 rolling dynamics 可用；600-step 单次无校正 replay 漂移明显，不能把世界模型写成真实 plant 的长时间开环替代。
 - Randomized 子集：
   - 1-step V MAE：约 `2.39 mV`
   - sampled 20-step rollout V MAE：约 `7.71 mV`
@@ -387,7 +392,7 @@ W3 环境每一步执行：
 
 - `RewardWeights` dataclass 和 `train_sac.py` CLI 默认值已统一为 `speed=30, voltage=300, temperature=0.02, aging=120`。
 - 温度风险已从全程二次惩罚改为 `T_soft=40 deg C` 后的 soft-hard penalty，超过 `T_max` 后进入 cliff。
-- 初始 Mamba history 已从 64 步完全重复状态改为带微小物理噪声的 no-current 初始化；100/600-step 闭环误差仍需在 WSL/Mamba 环境补量化。
+- 初始 Mamba history 已从 64 步完全重复状态改为带微小物理噪声的 no-current 初始化；100/600-step replay 已补量化，显示长 horizon 明显漂移。
 
 ### 多单体策略复制初版对比
 
@@ -533,10 +538,10 @@ aging = 120
    - Mamba 世界模型当前主要提供 SOC/V/T 动力学，老化头只是保守接口。
    - 若要强化“数据驱动老化优化”主张，需要重训 `delta_SOH` 标签或做 `alpha * model + (1-alpha) * proxy` 消融。
 
-5. 600-step SAC 部署的长 horizon 世界模型误差仍需量化。
+5. 600-step SAC 部署的长 horizon 世界模型误差已量化但偏大。
    - 当前已报告 B0018 20-step open-loop `8.04 mV`。
-   - `BatteryChargingEnv._reset_history()` 已改成带微小物理噪声的初始化，降低完全静态历史的分布外问题。
-   - 仍建议在 WSL/Mamba 环境补 100/600-step 闭环误差表。
+   - WSL/Mamba/CUDA replay：100-step `22.36 mV` MAE，600-step `170.56 mV` MAE。
+   - 结论：当前 W3/W4 结果应解释为短期滚动决策 + ECM 硬安全投影，不应解释为 600-step 长时间开环预测已经可靠。
 
 6. BatteryML Mamba-head SOH 已完成轻量 ablation，但仍需加强。
    - 当前是 BatteryML-compatible 目标 + W2 Mamba embedding + Ridge head。

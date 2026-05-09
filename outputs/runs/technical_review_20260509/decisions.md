@@ -22,7 +22,8 @@ Date: 2026-05-09
 
 5. Reduce Mamba reset-history distribution shift.
    - `_reset_history()` now initializes around no-current state with small physical noise instead of 64 identical rows.
-   - Remaining gap: 100/600-step closed-loop voltage error still needs WSL/Mamba quantification.
+   - WSL/Mamba/CUDA replay has now quantified the long-horizon drift: B0018 100-step V MAE/P95 = 22.36/85.83 mV, 600-step V MAE/P95 = 170.56/550.20 mV.
+   - Consequence: report W2 as a short-horizon rolling dynamics model, not a 600-step open-loop plant substitute.
 
 ## Verification
 

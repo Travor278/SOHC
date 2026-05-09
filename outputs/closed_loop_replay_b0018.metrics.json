@@ -1,0 +1,29 @@
+{
+  "cell": "B0018",
+  "seq_len": 64,
+  "device": "cuda",
+  "world_model": "outputs/world_model.pt",
+  "dataset": "outputs/world_model_train_data.pt",
+  "metrics": {
+    "h100_stride256": {
+      "horizon": 100,
+      "stride": 256,
+      "rollout_step_errors": 120700,
+      "estimated_rollout_starts": 1207,
+      "voltage_mae_mV": 22.355671429559035,
+      "voltage_p95_mV": 85.82719383239744,
+      "voltage_p99_mV": 143.87620407104484,
+      "elapsed_s": 4.303
+    },
+    "h600_stride512": {
+      "horizon": 600,
+      "stride": 512,
+      "rollout_step_errors": 261600,
+      "estimated_rollout_starts": 436,
+      "voltage_mae_mV": 170.56109197249106,
+      "voltage_p95_mV": 550.1965637207028,
+      "voltage_p99_mV": 666.191729125977,
+      "elapsed_s": 7.833
+    }
+  }
+}

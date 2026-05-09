@@ -74,6 +74,7 @@
   - [x] 20 步漂移 < 50 mV
   - [x] **Randomized QC full 1-step V MAE < 10 mV**：26/28 文件，`2.17 mV`
   - [ ] Randomized QC full 20-step V MAE < 10 mV：当前 `24.29 mV`
+- [x] B0018 100/600-step 长 horizon replay 误差复核：100-step `22.36 mV` MAE，600-step `170.56 mV` MAE
 - [x] 退化预案：若 mamba-ssm 装不上，加 `--gru-fallback` 跑 GRU baseline
 - [x] 保存 `outputs/world_model.pt`
 
@@ -178,7 +179,7 @@
 - 2026-05-08 Simulink workflow：新增 `paper_figures/fig17_simulink_pack_workflow.png`，明确 Python pack 策略轨迹如何通过 CSV/MAT bridge 接入 Simulink 30 模组和 buck-boost balancing on/off paired test；仍只作接口/电路烟测流程，不替代 UPC 定量包级结果。
 - 2026-05-08 SOH Mamba-head ablation：新增 `craic_pipeline/soh_mamba_head.py` 和 `SOH_MAMBA_HEAD_RESULTS.md`。在 B0005/B0006/B0007 → B0018 上，SOH 通道置中后，physical stats Ridge 为 RMSE `3.18%` / MAE `1.71%`，Mamba embedding Ridge 为 RMSE `2.87%` / MAE `1.18%`。结论：Mamba 表征有增益，但未达 `<2% RMSE`，也尚未接入 external BatteryML trainer。
 - 2026-05-09 技术审评修正：`ecm_safety_layer.py` 已加入 SOH-aware R0 修正；`rl_env.py` / `train_sac.py` 已统一 final reward 默认权重 `30/300/0.02/120`，温度项改为 soft-hard penalty，初始 history 改为带微小物理噪声；`eval_compare.py` 已增加 Mamba/proxy 老化分解。现有 W4/W5 轨迹复核显示 `model_delta_soh_sum=0`、proxy 主导比例 `100%`，报告已改写为“物理应力代理老化项驱动”，不再暗示 Mamba 老化头已独立贡献寿命优化。
-- 2026-05-09 技术审评边界：当前 Python 多单体结果已重定性为 independent-cell supervisory prototype，不满足真实串联包 KCL/KVL；`CRAIC2026_REPORT_DRAFT.md` / `SYSTEM_STATUS.md` 已同步降级包级主张。100/600-step 世界模型闭环误差仍需在 WSL/Mamba 环境补量化。
+- 2026-05-09 技术审评边界：当前 Python 多单体结果已重定性为 independent-cell supervisory prototype，不满足真实串联包 KCL/KVL；`CRAIC2026_REPORT_DRAFT.md` / `SYSTEM_STATUS.md` 已同步降级包级主张。100/600-step 世界模型 replay 已在 WSL/Mamba/CUDA 补量化：B0018 100-step V MAE/P95 `22.36/85.83 mV`，600-step V MAE/P95 `170.56/550.20 mV`，说明当前模型适合短期滚动决策，不适合声称 600-step 长开环 plant 替代。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
