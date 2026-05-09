@@ -27,10 +27,10 @@ except Exception:  # pragma: no cover - import error is clearer at construction.
 class RewardWeights:
     """Reward weights for speed, safety, temperature, and aging terms."""
 
-    speed: float = 12.0
-    voltage: float = 50.0
-    temperature: float = 0.2
-    aging: float = 80.0
+    speed: float = 30.0
+    voltage: float = 300.0
+    temperature: float = 0.02
+    aging: float = 120.0
 
 
 @dataclass
@@ -42,6 +42,7 @@ class EnvConfig:
     soc_target: float = 0.8
     V_max: float = 4.2
     V_min: float = 2.5
+    T_soft: float = 40.0
     T_max: float = 50.0
     T_ref: float = 25.0
     I_max_amps: float = 5.0
@@ -106,7 +107,11 @@ class BatteryChargingEnv(gym.Env if gym is not None else object):
         raw_action = float(np.asarray(action, dtype=float).reshape(-1)[0])
         raw_action = float(np.clip(raw_action, -1.0, 1.0))
         requested_current = 0.5 * (raw_action + 1.0) * self.cfg.I_max_amps
-        safe_ecm_current = self.safety.project(soc=float(self.state[0]), action_current=-requested_current)
+        safe_ecm_current = self.safety.project(
+            soc=float(self.state[0]),
+            action_current=-requested_current,
+            soh=float(self.state[1]),
+        )
         safe_current = float(np.clip(-safe_ecm_current, 0.0, self.cfg.I_max_amps))
         previous = self.state.copy()
         next_state = self._world_step(previous, safe_current)
@@ -143,7 +148,13 @@ class BatteryChargingEnv(gym.Env if gym is not None else object):
         high_v = max(float(voltage_for_penalty - self.cfg.V_max), 0.0)
         low_v = max(float(self.cfg.V_min - voltage_for_penalty), 0.0)
         voltage_penalty = high_v * high_v + low_v * low_v
-        temp_penalty = ((float(s_tp1[4]) - self.cfg.T_ref) / 10.0) ** 2
+        temperature = float(s_tp1[4])
+        if temperature <= self.cfg.T_soft:
+            temp_penalty = 0.0
+        elif temperature <= self.cfg.T_max:
+            temp_penalty = ((temperature - self.cfg.T_soft) / max(self.cfg.T_max - self.cfg.T_soft, 1e-6)) ** 2
+        else:
+            temp_penalty = 10.0 + 5.0 * (temperature - self.cfg.T_max)
         reward = (
             self.cfg.reward.speed * delta_soc
             - self.cfg.reward.voltage * voltage_penalty
@@ -187,9 +198,25 @@ class BatteryChargingEnv(gym.Env if gym is not None else object):
         return next_state
 
     def _reset_history(self, state: np.ndarray) -> None:
-        """Fill Mamba history with a repeated initial no-current state."""
+        """Initialize Mamba history near the initial no-current state."""
         row = np.array([state[0], state[1], state[2], state[3], state[4], 0.0], dtype=np.float32)
-        self.history = np.repeat(row[None, :], self.cfg.seq_len, axis=0)
+        rng = getattr(self, "np_random", None)
+        if rng is None:
+            rng = np.random.default_rng()
+        history = np.repeat(row[None, :], self.cfg.seq_len, axis=0)
+        noise = np.zeros_like(history, dtype=np.float32)
+        noise[:, 0] = rng.normal(0.0, 5e-4, self.cfg.seq_len)
+        noise[:, 1] = rng.normal(0.0, 1e-5, self.cfg.seq_len)
+        noise[:, 2] = rng.normal(0.0, 1e-3, self.cfg.seq_len)
+        noise[:, 4] = rng.normal(0.0, 2e-2, self.cfg.seq_len)
+        history = history + noise
+        history[:, 0] = np.clip(history[:, 0], 0.0, 1.0)
+        history[:, 1] = np.clip(history[:, 1], 0.0, 1.2)
+        history[:, 2] = np.clip(history[:, 2], self.cfg.V_min, self.cfg.V_max)
+        history[:, 3] = 0.0
+        history[:, 4] = np.clip(history[:, 4], -20.0, self.cfg.T_max)
+        history[:, 5] = 0.0
+        self.history = history.astype(np.float32)
 
     def _aging_proxy_delta_soh(self, current_A: float, *, raw_voltage: float, temperature: float) -> float:
         """Estimate one-step SOH loss from current, high-voltage, and heat stress."""

@@ -2,7 +2,8 @@
 
 The layer uses the second-order RC parameters shipped with the legacy MATLAB
 assets and clips current actions so the next-step terminal voltage remains
-inside configured voltage bounds.
+inside configured voltage bounds. A first-order SOH correction is applied to
+R0 at projection time to keep aged cells more conservative.
 """
 from __future__ import annotations
 
@@ -77,21 +78,26 @@ class ECMSafetyLayer:
         self.V1 = 0.0
         self.V2 = 0.0
 
-    def predict_voltage(self, soc: float, current: float) -> float:
-        """Predict next terminal voltage without mutating polarization state."""
+    def predict_voltage(self, soc: float, current: float, soh: float = 1.0) -> float:
+        """Predict next terminal voltage with SOH-aware R0, without mutation."""
         next_v1, next_v2 = self._next_polarization(current)
-        return self._ocv(soc) - current * self.params.R0 - next_v1 - next_v2
+        return self._ocv(soc) - current * self.effective_R0(soh) - next_v1 - next_v2
 
-    def project(self, soc: float, action_current: float) -> float:
-        """Clip action current so the predicted next voltage stays in bounds."""
+    def project(self, soc: float, action_current: float, soh: float = 1.0) -> float:
+        """Clip action current so SOH-aware next voltage stays in bounds."""
         current = float(action_current)
-        voltage = self.predict_voltage(soc, current)
+        voltage = self.predict_voltage(soc, current, soh=soh)
         if voltage > self.params.V_max:
-            current = self._current_for_voltage(soc, self.params.V_max)
+            current = self._current_for_voltage(soc, self.params.V_max, soh=soh)
         elif voltage < self.params.V_min:
-            current = self._current_for_voltage(soc, self.params.V_min)
+            current = self._current_for_voltage(soc, self.params.V_min, soh=soh)
         self.V1, self.V2 = self._next_polarization(current)
         return float(current)
+
+    def effective_R0(self, soh: float) -> float:
+        """Return the linear SOH-R0 correction used by the safety projector."""
+        soh_clipped = float(np.clip(soh, 0.5, 1.0))
+        return float(self.params.R0 * (2.0 - soh_clipped))
 
     def reset(self) -> None:
         """Reset internal RC polarization voltages to zero."""
@@ -106,12 +112,12 @@ class ECMSafetyLayer:
         next_v2 = self.V2 * a2 + current * self.params.R2 * (1.0 - a2)
         return float(next_v1), float(next_v2)
 
-    def _current_for_voltage(self, soc: float, target_voltage: float) -> float:
+    def _current_for_voltage(self, soc: float, target_voltage: float, soh: float = 1.0) -> float:
         """Solve the linear ECM voltage equation for current at a boundary."""
         a1 = np.exp(-self.dt / max(self.params.R1 * self.params.C1, 1e-12))
         a2 = np.exp(-self.dt / max(self.params.R2 * self.params.C2, 1e-12))
         base = self._ocv(soc) - self.V1 * a1 - self.V2 * a2
-        gain = self.params.R0 + self.params.R1 * (1.0 - a1) + self.params.R2 * (1.0 - a2)
+        gain = self.effective_R0(soh) + self.params.R1 * (1.0 - a1) + self.params.R2 * (1.0 - a2)
         return float((base - target_voltage) / max(gain, 1e-12))
 
     def _ocv(self, soc: float) -> float:

@@ -43,6 +43,16 @@ def _make_env(max_steps: int = 80) -> BatteryChargingEnv:
     return BatteryChargingEnv(DummyWorldModel(), ECMSafetyLayer(params), cfg)
 
 
+def test_reward_defaults_match_final_policy_weights():
+    """Reward defaults stay aligned with the selected W3 final policy."""
+    weights = RewardWeights()
+
+    assert weights.speed == 30.0
+    assert weights.voltage == 300.0
+    assert weights.temperature == 0.02
+    assert weights.aging == 120.0
+
+
 def test_battery_charging_env_reset_and_step_contract():
     """W3 env exposes Gymnasium reset/step shapes and finite diagnostics."""
     env = _make_env()
@@ -91,6 +101,23 @@ def test_compute_reward_penalizes_raw_voltage_before_l3_clip():
 
     assert reward_raw_over < reward_safe
     assert terms["voltage_penalty"] > 0.0
+
+
+def test_temperature_penalty_activates_only_after_soft_limit():
+    """Soft-hard temperature risk ignores nominal temperatures and cliffs after max."""
+    env = _make_env()
+    state = np.array([0.2, 1.0, 3.7, 0.0, 25.0], dtype=np.float32)
+    cool = np.array([0.21, 1.0, 3.7, 1.0, 35.0], dtype=np.float32)
+    warm = np.array([0.21, 1.0, 3.7, 1.0, 45.0], dtype=np.float32)
+    hot = np.array([0.21, 1.0, 3.7, 1.0, 55.0], dtype=np.float32)
+
+    _, cool_terms = env.compute_reward(state, cool)
+    _, warm_terms = env.compute_reward(state, warm)
+    _, hot_terms = env.compute_reward(state, hot)
+
+    assert cool_terms["temperature_penalty"] == 0.0
+    assert warm_terms["temperature_penalty"] > 0.0
+    assert hot_terms["temperature_penalty"] > warm_terms["temperature_penalty"]
 
 
 def test_aging_proxy_increases_with_high_voltage_stress():

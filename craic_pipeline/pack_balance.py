@@ -1,9 +1,11 @@
-"""Pack-level strategy replication and SOC-spread balancing simulation.
+"""Independent multi-cell strategy replication and SOC-spread coordination.
 
 This module keeps the W5 pack prototype close to the W3/W4 single-cell loop:
 each cell runs the same world-model + ECM environment, a single-cell policy or
-baseline proposes a current per cell, and a lightweight coordinator adds active
-balancing trims before stepping the cells.
+baseline proposes a current per cell, and a lightweight coordinator adds
+supervisory balancing trims before stepping the cells. The default simulator is
+not a KCL/KVL series-string plant: it is a multi-cell control prototype used to
+stress policy replication and balancing logic before Simulink/Simscape coupling.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from craic_pipeline.eval_compare import DEFAULT_ECM_PARAMS, _current_to_action, 
 
 @dataclass
 class PackConfig:
-    """Configuration for a series/parallel pack assembled from W3 cell envs."""
+    """Configuration for the independent-cell replication layout and labels."""
 
     n_series: int = 6
     n_parallel: int = 1
@@ -61,7 +63,7 @@ def build_pack_envs(
     cfg: PackConfig,
     device: str = "auto",
 ):
-    """Create one W3 cell environment per pack cell from W2/W3 artifacts."""
+    """Create one W3 cell environment per replicated cell from W2/W3 artifacts."""
     from craic_pipeline.ecm_safety_layer import ECMSafetyLayer, load_params_from_mat
     from craic_pipeline.rl_env import BatteryChargingEnv, EnvConfig
     from craic_pipeline.train_sac import _resolve_device
@@ -111,7 +113,7 @@ def initial_pack_states(cfg: PackConfig, seed: int | None = None) -> np.ndarray:
 
 
 class PackChargingSimulator:
-    """Roll out replicated cell controllers plus optional balancing trims."""
+    """Roll out replicated cell controllers plus optional coordination trims."""
 
     def __init__(self, cell_envs: Sequence, cfg: PackConfig):
         """Create a simulator from already-built W3 cell environments."""
@@ -128,7 +130,7 @@ class PackChargingSimulator:
         seed: int | None = None,
         balance: bool = True,
     ) -> pd.DataFrame:
-        """Run one pack episode and return per-cell trajectory rows."""
+        """Run one independent-cell episode and return per-cell trajectory rows."""
         states = initial_pack_states(self.cfg, seed=seed)
         for env, state in zip(self.cell_envs, states):
             env.reset(seed=seed)
@@ -182,6 +184,8 @@ class PackChargingSimulator:
                         "reward": float(rewards[cell_id]),
                         "terminated": bool(terminated),
                         "truncated": bool(truncated),
+                        "topology_mode": "independent_cell_replication",
+                        "series_kcl_enforced": False,
                         **pack_snapshot,
                     }
                 )
@@ -197,7 +201,7 @@ class PackChargingSimulator:
 
 
 def apply_soc_balancer(currents_A: np.ndarray, soc: np.ndarray, cfg: PackConfig) -> np.ndarray:
-    """Add active-balancing current trims from SOC spread and enforce limits."""
+    """Apply independent-cell supervisory trims from SOC spread and limits."""
     currents = np.asarray(currents_A, dtype=float).copy()
     soc = np.asarray(soc, dtype=float)
     trims = cfg.balance_gain_A_per_soc * (float(np.mean(soc)) - soc)
@@ -257,7 +261,7 @@ def compute_pack_metrics(
     v_min: float = 2.5,
     v_max: float = 4.2,
 ) -> dict:
-    """Compute pack-level time, degradation, safety, and balancing metrics."""
+    """Compute multi-cell time, degradation, safety, and spread metrics."""
     if trajectory.empty:
         raise ValueError("trajectory is empty")
     per_step = (
@@ -310,7 +314,7 @@ def compute_pack_metrics(
 
 
 def plot_pack_comparison(trajectories: pd.DataFrame, out_dir: Path) -> Path:
-    """Plot pack-level SOC envelope, spread, current, voltage, and temperature."""
+    """Plot multi-cell SOC envelope, spread, current, voltage, and temperature."""
     import matplotlib.pyplot as plt
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -350,7 +354,7 @@ def plot_pack_comparison(trajectories: pd.DataFrame, out_dir: Path) -> Path:
 
 
 def _pack_snapshot(states: Sequence[np.ndarray], cfg: PackConfig) -> dict:
-    """Aggregate per-cell states into pack-level diagnostics."""
+    """Aggregate per-cell states into multi-cell diagnostics."""
     arr = np.stack(states, axis=0).astype(float)
     module_voltage = arr[:, 2].reshape(cfg.n_series, cfg.n_parallel).mean(axis=1)
     return {
@@ -362,6 +366,7 @@ def _pack_snapshot(states: Sequence[np.ndarray], cfg: PackConfig) -> dict:
         "voltage_max": float(arr[:, 2].max()),
         "pack_voltage": float(module_voltage.sum()),
         "temperature_max": float(arr[:, 4].max()),
+        "series_kcl_enforced": False,
     }
 
 

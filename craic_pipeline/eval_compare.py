@@ -102,6 +102,15 @@ def compute_metrics(trajectory, *, soc_target: float = 0.8, v_min: float = 2.5, 
     end_soh = float(df["soh"].iloc[-1])
     start_soc = float(df["soc_before"].iloc[0])
     end_soc = float(df["soc"].iloc[-1])
+    model_delta = pd.to_numeric(df.get("model_delta_soh", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0)
+    proxy_delta = pd.to_numeric(df.get("aging_proxy_delta_soh", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0)
+    active_aging = (model_delta > 0.0) | (proxy_delta > 0.0)
+    aging_steps = int(active_aging.sum())
+    model_dominated = int(((model_delta >= proxy_delta) & active_aging).sum())
+    proxy_dominated = int(((proxy_delta > model_delta) & active_aging).sum())
+    model_sum = float(model_delta.sum())
+    proxy_sum = float(proxy_delta.sum())
+    aging_signal_sum = model_sum + proxy_sum
     return {
         "steps": int(len(df)),
         "return": float(df["reward"].sum()),
@@ -117,6 +126,13 @@ def compute_metrics(trajectory, *, soc_target: float = 0.8, v_min: float = 2.5, 
         "max_T": float(df["temperature"].max()),
         "mean_current_A": float(df["current_A"].mean()),
         "max_voltage": float(df["voltage"].max()),
+        "model_delta_soh_sum": model_sum,
+        "aging_proxy_delta_soh_sum": proxy_sum,
+        "model_delta_soh_fraction": model_sum / max(aging_signal_sum, 1e-12),
+        "model_dominated_steps": model_dominated,
+        "proxy_dominated_steps": proxy_dominated,
+        "model_dominated_ratio": model_dominated / max(aging_steps, 1),
+        "proxy_dominated_ratio": proxy_dominated / max(aging_steps, 1),
     }
 
 
@@ -147,6 +163,74 @@ def plot_comparison(trajectories: dict, out_dir: Path):
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
     return out_path
+
+
+def measure_closed_loop_replay_error(
+    world_model,
+    trajectory,
+    *,
+    seq_len: int = 64,
+    horizons: tuple[int, ...] = (100, 600),
+    device: str = "cpu",
+) -> dict:
+    """Replay true actions while the world model rolls forward on its own state.
+
+    Args:
+        world_model: W2 model returning `[SOC_next, V_next, T_next, delta_SOH]`.
+        trajectory: DataFrame-like W4/NASA trajectory with SOC/SOH/V/I/T columns.
+        seq_len: Warm-up history length using true rows before autonomous rollout.
+        horizons: Step horizons to summarize in mV.
+        device: Torch device for inference.
+
+    Returns:
+        Dict with per-horizon voltage MAE/P95 and available sample count.
+    """
+    import torch
+
+    df = pd.DataFrame(trajectory).reset_index(drop=True)
+    columns = ["soc", "soh", "voltage", "current_A", "temperature"]
+    missing = [col for col in columns if col not in df.columns]
+    if missing:
+        raise ValueError(f"trajectory missing required columns: {missing}")
+    if len(df) <= seq_len:
+        raise ValueError(f"trajectory needs more than seq_len={seq_len} rows")
+    max_horizon = min(max(horizons), len(df) - seq_len)
+    history = np.stack(
+        [
+            df["soc"].to_numpy(dtype=np.float32)[:seq_len],
+            df["soh"].to_numpy(dtype=np.float32)[:seq_len],
+            df["voltage"].to_numpy(dtype=np.float32)[:seq_len],
+            df["current_A"].to_numpy(dtype=np.float32)[:seq_len],
+            df["temperature"].to_numpy(dtype=np.float32)[:seq_len],
+            df["current_A"].to_numpy(dtype=np.float32)[:seq_len],
+        ],
+        axis=1,
+    )
+    state = history[-1, :5].astype(np.float32)
+    errors_mV: list[float] = []
+    torch_device = torch.device(device)
+    world_model.to(torch_device)
+    world_model.eval()
+    for offset in range(max_horizon):
+        target_idx = seq_len + offset
+        action_current = float(df.loc[target_idx, "current_A"])
+        model_input = history.copy()
+        model_input[-1] = np.array([state[0], state[1], state[2], state[3], state[4], action_current], dtype=np.float32)
+        with torch.no_grad():
+            pred = world_model(torch.from_numpy(model_input).unsqueeze(0).to(torch_device)).detach().cpu().numpy()[0]
+        pred_soh = float(np.clip(state[1] - max(float(pred[3]), 0.0), 0.0, 1.2))
+        next_state = np.array([pred[0], pred_soh, pred[1], action_current, pred[2]], dtype=np.float32)
+        errors_mV.append(abs(float(pred[1]) - float(df.loc[target_idx, "voltage"])) * 1000.0)
+        history = np.roll(model_input, shift=-1, axis=0)
+        history[-1] = np.array([next_state[0], next_state[1], next_state[2], next_state[3], next_state[4], action_current])
+        state = next_state
+    metrics: dict[str, float | int] = {"closed_loop_replay_available_steps": int(len(errors_mV))}
+    for horizon in horizons:
+        sample = np.asarray(errors_mV[: min(horizon, len(errors_mV))], dtype=float)
+        metrics[f"closed_loop_{horizon}step_V_samples"] = int(sample.size)
+        metrics[f"closed_loop_{horizon}step_V_MAE_mV"] = float(np.mean(sample)) if sample.size else np.nan
+        metrics[f"closed_loop_{horizon}step_V_p95_mV"] = float(np.percentile(sample, 95)) if sample.size else np.nan
+    return metrics
 
 
 def _rollout(env, controller, *, label: str, seed: int | None = None) -> pd.DataFrame:
@@ -210,6 +294,8 @@ def _paired_against_cc_cv(metrics: pd.DataFrame) -> pd.DataFrame:
         strategy_time = float(other_hit["time_to_80_s"].mean())
         cc_soh = float(cc_hit["delta_soh"].mean())
         strategy_soh = float(other_hit["delta_soh"].mean())
+        time_delta = cc_hit["time_to_80_s"].to_numpy(dtype=float) - other_hit["time_to_80_s"].to_numpy(dtype=float)
+        soh_delta = cc_hit["delta_soh"].to_numpy(dtype=float) - other_hit["delta_soh"].to_numpy(dtype=float)
         rows.append(
             {
                 "strategy": strategy,
@@ -217,9 +303,11 @@ def _paired_against_cc_cv(metrics: pd.DataFrame) -> pd.DataFrame:
                 "cc_cv_time_to_80_s": cc_time,
                 "strategy_time_to_80_s": strategy_time,
                 "speed_improvement_pct": 100.0 * (cc_time - strategy_time) / max(cc_time, 1e-12),
+                "time_improvement_std_s": float(np.std(time_delta, ddof=1)) if len(time_delta) > 1 else 0.0,
                 "cc_cv_delta_soh": cc_soh,
                 "strategy_delta_soh": strategy_soh,
                 "delta_soh_reduction_pct": 100.0 * (cc_soh - strategy_soh) / max(cc_soh, 1e-12),
+                "delta_soh_reduction_std": float(np.std(soh_delta, ddof=1)) if len(soh_delta) > 1 else 0.0,
                 "cc_cv_overvoltage": int(cc_hit["overvoltage_count"].sum()),
                 "strategy_overvoltage": int(other_hit["overvoltage_count"].sum()),
             }
@@ -307,6 +395,11 @@ def main():
         max_T_mean=("max_T", "mean"),
         return_mean=("return", "mean"),
         soc_end_mean=("soc_end", "mean"),
+        model_delta_soh_sum_mean=("model_delta_soh_sum", "mean"),
+        aging_proxy_delta_soh_sum_mean=("aging_proxy_delta_soh_sum", "mean"),
+        model_delta_soh_fraction_mean=("model_delta_soh_fraction", "mean"),
+        model_dominated_ratio_mean=("model_dominated_ratio", "mean"),
+        proxy_dominated_ratio_mean=("proxy_dominated_ratio", "mean"),
     )
     paired = _paired_against_cc_cv(metrics)
 

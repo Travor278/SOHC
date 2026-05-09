@@ -1,6 +1,6 @@
 # CRAIC2026 EV 智能快充系统当前状态
 
-更新日期：2026-05-08  
+更新日期：2026-05-09
 仓库：`https://github.com/Travor278/SOHC`  
 当前阶段：W0-W4 主链路已跑通，W5 包级/展示扩展已形成论文初稿产物。
 
@@ -38,10 +38,12 @@ W4: CC-CV / MFCC / SAC 对比评估
         │
         ▼
 W5: 多单体 / 包级扩展
-  ├─ 6S1P Python pack prototype
+  ├─ 6-cell independent supervisory prototype
   ├─ 单体策略复制: CC-CV / MFCC / SAC per cell
   └─ SOC-spread balancing coordinator
 ```
+
+重要边界：当前 Python W5 原型是 independent-cell supervisory simulation，不满足真实 6S1P/30S1P 串联包的 KCL/KVL 约束；包级物理结论需由 Simulink/Simscape、liionpack/PyBaMM 或 UPC 回放 plant 进一步验证。
 
 ## 2. 数据策略
 
@@ -66,11 +68,11 @@ W5: 多单体 / 包级扩展
 | `craic_pipeline/soc_finetune.py` | 已实现主流程 | NASA fine-tune、严格 SOC 标签、cell holdout |
 | `craic_pipeline/soh_train.py` | 已实现 | BatteryML-compatible SOH baseline |
 | `craic_pipeline/world_model_mamba.py` | 已实现 | Mamba/GRU residual 世界模型训练与评估 |
-| `craic_pipeline/ecm_safety_layer.py` | 已实现 | 二阶 ECM 安全动作投影 |
-| `craic_pipeline/rl_env.py` | 已实现 | SAC 环境，含 reward 和 L3 安全约束 |
-| `craic_pipeline/train_sac.py` | 已实现 | SAC 训练入口，支持 reward sweep/checkpoint |
-| `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估与画图 |
-| `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 均衡、包级指标与画图 |
+| `craic_pipeline/ecm_safety_layer.py` | 已实现 | 二阶 ECM 安全动作投影，含一阶 SOH-R0 修正 |
+| `craic_pipeline/rl_env.py` | 已实现 | SAC 环境，含 final reward、soft-hard 温度项和 L3 安全约束 |
+| `craic_pipeline/train_sac.py` | 已实现 | SAC 训练入口，CLI 默认权重已与 final policy 对齐 |
+| `craic_pipeline/eval_compare.py` | 已实现 | CC-CV / MFCC / SAC 评估、老化信号分解与画图 |
+| `craic_pipeline/pack_balance.py` | 已实现初版 | 多单体策略复制、SOC-spread 协调、指标与画图；非串联包物理 plant |
 | `craic_pipeline/pack_dataset_upc.py` | 已实现 | UPC 36-cell pack Parquet 加载、summary、Simulink CSV 导出 |
 | `craic_pipeline/eval_upc_pack.py` | 已实现 | UPC 真实数据论文图表 + Python active buck-boost 短仿真 |
 | `craic_pipeline/zenodo_zero_shot.py` | 已实现 | Zenodo 6985321 fresh/aged cell zero-shot SOC/SOH 诊断 |
@@ -227,6 +229,7 @@ ECM 安全层用于 W2/W3 的 L3 物理约束。
 
 ```text
 soc: 当前 SOC
+soh: 当前 SOH
 action_current: 候选动作电流
 ```
 
@@ -241,6 +244,14 @@ safe_current: 投影后的安全电流
 ```text
 V_min <= V_pred <= V_max
 ```
+
+当前安全层已加入一阶 SOH-R0 修正：
+
+```text
+R0_eff = R0_fresh * (2 - clip(SOH, 0.5, 1.0))
+```
+
+SOH 较低的 cell 会得到更大的等效欧姆内阻，从而让同一充电请求在电压上限附近被更保守地投影。
 
 当前电流符号适配：
 
@@ -366,19 +377,33 @@ W3 环境每一步执行：
 - ΔSOH 降低 ≥ 10%
 - 过压 = 0
 
-### 包级 6S1P 初版对比
+老化信号复核：
 
-当前包级原型输出使用：
+- `outputs/eval_w4_final_default/trajectories.csv` 中三种策略的 `model_delta_soh` 总和均为 `0`。
+- `aging_proxy_delta_soh` 总和：CC-CV `0.020191`，MFCC `0.023817`，SAC `0.019842`。
+- proxy 主导步数比例为 `100%`。因此当前 ΔSOH 改善应表述为“物理应力代理老化项驱动”，不能表述为 Mamba 老化头已经独立预测寿命收益。
+
+代码层修正：
+
+- `RewardWeights` dataclass 和 `train_sac.py` CLI 默认值已统一为 `speed=30, voltage=300, temperature=0.02, aging=120`。
+- 温度风险已从全程二次惩罚改为 `T_soft=40 deg C` 后的 soft-hard penalty，超过 `T_max` 后进入 cliff。
+- 初始 Mamba history 已从 64 步完全重复状态改为带微小物理噪声的 no-current 初始化；100/600-step 闭环误差仍需在 WSL/Mamba 环境补量化。
+
+### 多单体策略复制初版对比
+
+当前 independent-cell supervisory prototype 输出使用：
 
 - 模块：`craic_pipeline/pack_balance.py`
-- 默认包规模：`6S1P`
-- 扩展烟测：`30S1P`
+- 默认规模标签：`6-cell`
+- 扩展烟测标签：`30-cell`
 - 策略：CC-CV / MFCC / SAC 单体策略复制到每个 cell
 - 均衡：SOC-spread active balancing trim
 - horizon：1200 step
 - 输出目录：`outputs/eval_pack_6s1p_h1200/`
 
-包级停止口径比 W4 更严格：要求 **pack 内最低 SOC cell** 达到 80%。
+停止口径比 W4 更严格：要求 **最低 SOC cell** 达到 80%。
+
+物理边界：该原型允许 per-cell current 独立变化，因此不是物理 6S1P 串联包仿真；真实 6S/30S 结论需后续接入 Simulink/Simscape 或等效 KCL/KVL plant。
 
 | 指标 | CC-CV | MFCC | SAC |
 |---|---:|---:|---:|
@@ -392,16 +417,16 @@ W3 环境每一步执行：
 
 | 指标 | CC-CV | SAC | 改善 |
 |---|---:|---:|---:|
-| pack min-cell 到 80% 时间 | `1121 s` | `668 s` | `+40.41%` |
+| 最低 SOC cell 到 80% 时间 | `1121 s` | `668 s` | `+40.41%` |
 | 平均 ΔSOH | `0.003117` | `0.002400` | `-23.01%` |
 | 末端 SOC spread | `0.04544` | `0.03272` | `-28.00%` |
 
 注意：`raw_overvoltage_count` 统计的是世界模型未经 L3 裁剪的风险趋势；实际轨迹电压已由 ECM safety layer 投影，过压次数为 0。
 
-30S1P 短烟测也已跑通：
+30-cell 短烟测也已跑通：
 
 - 输出目录：`outputs/eval_pack_30s1p_smoke/`
-- 设置：30S1P，120 step，1 episode
+- 设置：30-cell，120 step，1 episode
 - 结果：CC-CV / MFCC / SAC 三策略实际过压均为 0
 - 用途：作为 `batterpack.slx` / `buck_boost_balance.slx` 的 per-cell current/SOC 轨迹接口验证，不作为最终性能对比。
 
@@ -457,6 +482,7 @@ Zenodo 18471156 已完成真实储能电站定性展示：
 ### L3 安全层
 
 - ECM safety layer 是硬安全约束。
+- ECM 投影已加入一阶 SOH-R0 修正，SOH 越低，等效 R0 越高，安全电流越保守。
 - 世界模型 raw voltage 会进入 reward 的电压风险惩罚。
 - 对外 observation 中的 voltage 使用 L3-clipped 电压，保证策略轨迹物理安全。
 
@@ -484,6 +510,8 @@ temperature = 0.02
 aging = 120
 ```
 
+当前评估复核显示 `model_delta_soh` 在 W4/W5 轨迹中没有正贡献，`aging_proxy_delta_soh` 主导比例为 `100%`。因此论文中应写“物理应力代理老化项驱动的 ΔSOH 降低”，而不是“世界模型老化头已经准确预测寿命损耗”。
+
 ## 7. 已知问题
 
 1. SOC `<1.5% MAE` 尚未达到。
@@ -500,17 +528,27 @@ aging = 120
    - 核心百分比使用“同初始条件且双方都到 80%”的 paired episodes。
    - 全量 summary 同时保留 hit_rate 和 soc_end_mean。
 
-4. BatteryML Mamba-head SOH 已完成轻量 ablation，但仍需加强。
+4. W4/W5 老化收益目前由 proxy 主导。
+   - `model_delta_soh_sum = 0`，proxy 主导比例 `100%`。
+   - Mamba 世界模型当前主要提供 SOC/V/T 动力学，老化头只是保守接口。
+   - 若要强化“数据驱动老化优化”主张，需要重训 `delta_SOH` 标签或做 `alpha * model + (1-alpha) * proxy` 消融。
+
+5. 600-step SAC 部署的长 horizon 世界模型误差仍需量化。
+   - 当前已报告 B0018 20-step open-loop `8.04 mV`。
+   - `BatteryChargingEnv._reset_history()` 已改成带微小物理噪声的初始化，降低完全静态历史的分布外问题。
+   - 仍建议在 WSL/Mamba 环境补 100/600-step 闭环误差表。
+
+6. BatteryML Mamba-head SOH 已完成轻量 ablation，但仍需加强。
    - 当前是 BatteryML-compatible 目标 + W2 Mamba embedding + Ridge head。
    - 尚未接入 external BatteryML trainer，也未达到 `<2% RMSE`。
 
-5. Zenodo 6985321 zero-shot 已完成但 SOC 精度不足。
+7. Zenodo 6985321 zero-shot 已完成但 SOC 精度不足。
    - fresh/aged SOC MAE 分别为 `16.11%` / `14.03%`。
    - 可作为跨尺度迁移瓶颈诊断，不宜写成泛化达标结果。
 
-6. 包级原型仍是 Python supervisory simulator。
-   - 当前没有直接求解 buck-boost 开关电路。
-   - 30S1P 短烟测已完成。
+8. 多单体原型仍是 Python independent-cell supervisory simulator。
+   - 当前没有直接求解串联 KCL/KVL，也没有直接求解 buck-boost 开关电路。
+   - 30-cell 短烟测已完成。
    - 仓库内 `batterpack.slx` / `buck_boost_balance.slx` 来源未知，后续只作可选接口演示，不作为论文定量依据。
    - 包级定量验证改用可信公开数据集，详见 `PACK_DATASETS.md`。
 

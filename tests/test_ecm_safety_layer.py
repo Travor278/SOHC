@@ -34,6 +34,28 @@ def test_cross_check_against_matlab_reference_is_millivolt_close():
     assert metrics["max_abs_error_mV"] < 1.0
 
 
+def test_soh_aware_r0_makes_aged_cell_more_conservative():
+    """SOH-aware projection increases R0 and lowers safe charge magnitude."""
+    params = ECMParams(
+        R0=0.05,
+        R1=0.01,
+        R2=0.02,
+        C1=1000.0,
+        C2=1000.0,
+        ocv_coeffs=(4.1,),
+        V_min=2.5,
+        V_max=4.2,
+    )
+    fresh = ECMSafetyLayer(params, dt=1.0)
+    aged = ECMSafetyLayer(params, dt=1.0)
+
+    fresh_current = fresh.project(soc=0.8, action_current=-10.0, soh=1.0)
+    aged_current = aged.project(soc=0.8, action_current=-10.0, soh=0.8)
+
+    assert aged.effective_R0(0.8) > fresh.effective_R0(1.0)
+    assert abs(aged_current) < abs(fresh_current)
+
+
 def test_ecm_random_projection_keeps_1000_actions_safe():
     """Projection keeps random action currents inside configured voltage bounds."""
     params = load_params_from_mat()

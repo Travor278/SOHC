@@ -80,6 +80,7 @@
 ### ECM 安全层
 
 - [x] 在 `craic_pipeline/ecm_safety_layer.py` 实现 `load_params_from_mat()`、`ECMSafetyLayer`
+- [x] 加入一阶 SOH-R0 修正：`R0_eff = R0 * (2 - clip(SOH, 0.5, 1.0))`
 - [x] 单元测试 `cross_check_against_matlab()`：与 MIUK.m 输出电压差 < 1 mV
 - [x] 投影测试：随机 1000 条动作，100% 满足 V_min ≤ V_pred ≤ V_max
 
@@ -87,6 +88,8 @@
 
 - [x] 在 `craic_pipeline/rl_env.py` 实现 `BatteryChargingEnv`（继承 `gymnasium.Env`）
 - [x] 实现 `compute_reward()`：4 项加权和（speed / V / T / aging）
+- [x] 统一 final reward 默认权重并加入 soft-hard 温度风险项
+- [x] 将 Mamba 初始 history 从完全重复静态状态改为带微小物理噪声的 no-current 初始化
 - [x] 单跑环境 1000 步，确认无异常
 - [x] 调奖励权重：先单项调（速度→安全→老化），再加权
 - [x] 跑 `train_sac.py --total-steps 100000`
@@ -98,6 +101,7 @@
 - [x] 在 `craic_pipeline/eval_compare.py` 实现 CC-CV、MFCC 基线
 - [x] 部署 SAC 策略，记录轨迹
 - [x] 计算指标表：充至 80% 耗时、ΔSOH 单循环、过压报警次数、平均 T
+- [x] 增加 `model_delta_soh` vs `aging_proxy_delta_soh` 分解统计，澄清老化收益来源
 - [x] 画 4 联子图（I/V/SOC/T over t），各策略叠加
 - [x] **核心交付**：vs CC-CV 充电速度 ↑ ≥ 15%、ΔSOH ↓ ≥ 10%、过压 = 0
 - [x] 在 BatteryML-compatible SOH 流程里挂 Mamba embedding head 跑一版 SOH，加进对比表（架构创新点；external BatteryML trainer 尚未接入）
@@ -106,9 +110,9 @@
 
 ## W5 · 包级扩展 + 答辩
 
-- [x] Python 6S1P 包级原型：单体 SAC/CC-CV/MFCC 策略复制 + SOC-spread 均衡协调器
+- [x] Python 6-cell independent supervisory prototype：单体 SAC/CC-CV/MFCC 策略复制 + SOC-spread 均衡协调器
 - [x] 输出包级对比：`outputs/eval_pack_6s1p_h1200/`（轨迹、summary、paired-vs-CCCV、pack 对比图）
-- [x] Python 30S1P 包级烟测：用于对接现有 `batterpack.slx` / `buck_boost_balance.slx`
+- [x] Python 30-cell independent supervisory smoke test：用于对接现有 `batterpack.slx` / `buck_boost_balance.slx`
 - [x] 调研可信包级数据集，新增 `PACK_DATASETS.md`
 - [x] 下载 UPC 36-cell pack WLTP+CC-CV 全量数据 → `data/pack_wltp_upc/`
 - [x] 写 `craic_pipeline/pack_dataset_upc.py`：解析 UPC pack Parquet 到统一接口
@@ -163,7 +167,7 @@
 - 2026-05-08 W3 reward sweep：修正 reward 电压项为 raw world-model voltage（L3 clipping 后仍惩罚危险趋势），并加入 `calendar_aging_scale=2.5e-6` 的时间老化下限；600-step horizon、小 buffer 训练不再 OOM。最终采用 `speed=30, voltage=300, temperature=0.02, aging=120`，`total_steps=60000`，`buffer_size=20000`，`batch_size=64` 的 horizon600 policy，训练 `ep_rew_mean` 从约 9.6 上升至 13.6。该模型已复制为本地 `outputs/sac_policy.zip`。
 - 2026-05-08 W4 eval：`eval_compare.py` 已输出 `trajectories.csv`、`metrics_by_episode.csv`、`metrics_summary.csv`、`paired_vs_cc_cv.csv` 和 `charging_comparison.png`。正式输出在 `outputs/eval_w4_final_default/`。CC-CV 采用 3A（接近 NASA/18650 常规倍率）作为基线；在双方都到达 80% SOC 的 paired episodes 上，SAC vs CC-CV：充电时间 596.5s → 411.75s（快 30.97%）、ΔSOH 0.001859 → 0.001536（降 17.37%）、过压 0 → 0。
 - 2026-05-08 W4 caveat：随机初始 SOC 下，CC-CV/MFCC 在 800s 内并非每个 episode 都能到 80%，因此“充至 80% 耗时”的核心百分比用同初始条件且双方均 hit target 的 paired episodes 统计；整体表同时保留 hit_rate 和 soc_end_mean，供答辩时透明说明。
-- 2026-05-08 W5 pack prototype：新增 `craic_pipeline/pack_balance.py`，默认 `6S1P`，支持 `30S1P` CLI；仿照 liionpack 的“单体模型扩成 series/parallel pack”思想，但不引入 PyBaMM 大依赖。当前 `outputs/eval_pack_6s1p_h1200/` 结果：SAC hit_rate 3/3，CC-CV 1/3，MFCC 0/3；paired episode 上 SAC vs CC-CV 充电时间 1121s → 668s（快 40.41%）、平均 ΔSOH 降 23.01%、末端 SOC spread 降 28.00%、实际过压 0。`outputs/eval_pack_30s1p_smoke/` 已完成 30S1P 短烟测，三策略 120 step 均无实际过压，可作为 Simulink 30 模组对接入口。
+- 2026-05-08 W5 pack prototype：新增 `craic_pipeline/pack_balance.py`，默认 6-cell，支持 30-cell CLI；当前是 independent-cell supervisory prototype，允许 per-cell current 独立变化，因此不能声称为真实 6S1P/30S1P 串联包物理仿真。当前 `outputs/eval_pack_6s1p_h1200/` 结果：SAC hit_rate 3/3，CC-CV 1/3，MFCC 0/3；paired episode 上 SAC vs CC-CV 充电时间 1121s → 668s（快 40.41%）、平均 ΔSOH 降 23.01%、末端 SOC spread 降 28.00%、实际过压 0。`outputs/eval_pack_30s1p_smoke/` 已完成 30-cell 短烟测，三策略 120 step 均无实际过压，可作为 Simulink 30 模组对接入口。
 - 2026-05-08 W5 数据源调整：仓库自带 `batterpack.slx` / `buck_boost_balance.slx` / `Rebattery_Modeling-master/` 来源与参数依据不明，后续只作可选接口演示；包级定量验证改用可信公开数据。首选 UPC 36-cell pack WLTP+CC-CV 数据集（Scientific Data 2025，DOI `10.1038/s41597-025-06229-5`，数据 DOI `10.34810/DATA2395`，12S3P、36 cell voltage、3 branch current、72 cell temperature、BMS SOC、balancing semicycle）。BattGP 8S LFP field data（Zenodo `10.5281/zenodo.13715694`）作为真实服役弱单体/异常补充。
 - 2026-05-08 W5 UPC loader：`scripts/download_upc_pack.py` 已通过 Dataverse API 下载并 MD5 校验 UPC 全量 `412/412` 文件（410 个 Parquet，约 1.32GB，本地忽略不提交）；`craic_pipeline/pack_dataset_upc.py` 支持单 cycle 加载、目录 summary、`12S3P` 原生数组、36-cell flatten、Simulink 宽 CSV 导出。全量 downsample=100 summary 输出 `outputs/upc_pack_summary_full.csv`：410 cycles（295 WLTP / 115 Capacity_check），3 个 cycle 含 Balancing semicycle，平均 cell voltage spread 约 69.34 mV，最大 spread 约 1312 mV。UPC 原始温度存在约 650°C 占位/异常值，summary 同时输出有效温度分位数和 valid fraction。
 - 2026-05-08 W5 UPC paper figures：新增 `craic_pipeline/eval_upc_pack.py` 和 `PAPER_UPC_PACK_RESULTS.md`，生成 `outputs/upc_pack_paper/fig_active_balancer_topology.png`、`fig_upc_measured_profile.png`、`fig_upc_real_balancing_semicycle.png`、`fig_python_balancing_short_sim.png`。实测 Cycle 003 WLTP：平均 spread 244.56 mV、P95 510.00 mV、最大 590.00 mV。Cycle 027 real balancing semicycle：起点 308.00 mV、段内最小 127.00 mV、终点 308.00 mV。Python active buck-boost 短仿真从 UPC 高 spread 样本初始化，30 min 内将 spread 622.00 mV → 334.00 mV（降 46.30%），max balance current 0.80 A。
@@ -173,6 +177,8 @@
 - 2026-05-08 Zenodo 18471156：已下载并校验 `BatteryData.zip`（MD5 `c28d865877bdacf1cdc16130f4b73cfe`），解压出 `600` 个 CSV。该数据无 SOC/SOH/容量标签，只能定性展示；新增 `craic_pipeline/station_demo_18471156.py`，输出 `paper_figures/zenodo_18471156/fig16_zenodo_18471156_station_demo.png`。图中 SOC 为 W1 LSTM 定性输出，SOH 改为 voltage/temp spread consistency proxy，不能作为 SOH 定量结论。
 - 2026-05-08 Simulink workflow：新增 `paper_figures/fig17_simulink_pack_workflow.png`，明确 Python pack 策略轨迹如何通过 CSV/MAT bridge 接入 Simulink 30 模组和 buck-boost balancing on/off paired test；仍只作接口/电路烟测流程，不替代 UPC 定量包级结果。
 - 2026-05-08 SOH Mamba-head ablation：新增 `craic_pipeline/soh_mamba_head.py` 和 `SOH_MAMBA_HEAD_RESULTS.md`。在 B0005/B0006/B0007 → B0018 上，SOH 通道置中后，physical stats Ridge 为 RMSE `3.18%` / MAE `1.71%`，Mamba embedding Ridge 为 RMSE `2.87%` / MAE `1.18%`。结论：Mamba 表征有增益，但未达 `<2% RMSE`，也尚未接入 external BatteryML trainer。
+- 2026-05-09 技术审评修正：`ecm_safety_layer.py` 已加入 SOH-aware R0 修正；`rl_env.py` / `train_sac.py` 已统一 final reward 默认权重 `30/300/0.02/120`，温度项改为 soft-hard penalty，初始 history 改为带微小物理噪声；`eval_compare.py` 已增加 Mamba/proxy 老化分解。现有 W4/W5 轨迹复核显示 `model_delta_soh_sum=0`、proxy 主导比例 `100%`，报告已改写为“物理应力代理老化项驱动”，不再暗示 Mamba 老化头已独立贡献寿命优化。
+- 2026-05-09 技术审评边界：当前 Python 多单体结果已重定性为 independent-cell supervisory prototype，不满足真实串联包 KCL/KVL；`CRAIC2026_REPORT_DRAFT.md` / `SYSTEM_STATUS.md` 已同步降级包级主张。100/600-step 世界模型闭环误差仍需在 WSL/Mamba 环境补量化。
 - mamba-ssm 在 Windows + CUDA 12 上偶有装机问题。退路：用 WSL2 / Linux GPU 机；或 GRU fallback。
 - BatteryML 依赖较重（含 PyTorch、PyG 等），首次 conda 装机预计 30-60 min。
 - TF 和 PyTorch 同时 import 在某些 CUDA 版本下会冲突。原则：TF inference 出 CSV → 退出进程 → PyTorch 流水线读 CSV，不混进程。
